@@ -1,6 +1,36 @@
 import { Request, Response } from "express";
 import Display from "../models/Display";
 
+export const trackPlayback = async (req: Request, res: Response) => {
+  try {
+    const { deviceId } = req.params;
+
+    // Find the display and update lastActive and totalHours
+    const display = await Display.findOneAndUpdate(
+      { deviceId },
+      {
+        $set: { lastActive: new Date() },
+        $inc: { totalHours: 5 } // Adding 5 minutes to totalHours
+      },
+      { new: true }
+    );
+
+    if (!display) {
+      return res.status(404).json({ message: "Display not found" });
+    }
+
+    return res.json({
+      success: true,
+      message: "Playback tracked successfully",
+      lastActive: display.lastActive,
+      totalHours: display.totalHours
+    });
+  } catch (error) {
+    console.error("Error tracking playback:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 export const getDisplayByDeviceId = async (req: Request, res: Response) => {
   try {
     const { deviceId } = req.params;

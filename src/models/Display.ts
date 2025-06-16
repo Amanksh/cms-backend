@@ -9,6 +9,7 @@ export interface IDisplay extends Document {
   playlistId?: mongoose.Types.ObjectId;
   userId: string;
   lastActive: Date;
+  totalHours: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,6 +28,7 @@ const DisplaySchema = new Schema<IDisplay>(
     playlistId: { type: Schema.Types.ObjectId, ref: "Playlist" },
     userId: { type: String, required: true },
     lastActive: { type: Date, default: Date.now },
+    totalHours: { type: Number, default: 0 }, // Total hours in minutes
   },
   { timestamps: true }
 );
