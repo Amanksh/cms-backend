@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { displayRoutes } from "./routes/display.routes";
+import { emailRoutes } from "./routes/email.routes";
 
 // Import models to ensure they are registered
 import "./models/Display";
@@ -26,6 +27,7 @@ mongoose
 
 // Routes
 app.use("/api/displays", displayRoutes);
+app.use("/api/email", emailRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
