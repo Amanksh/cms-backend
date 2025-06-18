@@ -4,7 +4,7 @@ import { getDisplayByDeviceId, trackPlayback } from "../controllers/display.cont
 const router = Router();
 
 // Track display playback
-router.post("/playback/:deviceId", trackPlayback);
+router.post("/playback", trackPlayback);
 
 // Get display and playlist by device ID
 router.get("/device/:deviceId", getDisplayByDeviceId);
