@@ -3,7 +3,7 @@ import Display from "../models/Display";
 
 export const trackPlayback = async (req: Request, res: Response) => {
   try {
-    const { deviceId } = req.params;
+    const { deviceId } = req.body;
 
     // Find the display and update lastActive and totalHours
     const display = await Display.findOneAndUpdate(
