@@ -1,0 +1,47 @@
+{
+  "product": {
+    "id": "LED-P2.5-1920x1080",
+    "name": "P2.5 Indoor LED Display",
+    "category": "Indoor LED Display",
+    "pixelPitch": 2.5,
+    "resolution": {
+      "width": 1920,
+      "height": 1080
+    },
+    "cabinetDimensions": {
+      "width": 480,
+      "height": 270
+    },
+    "moduleDimensions": {
+      "width": 160,
+      "height": 90
+    },
+    "moduleResolution": {
+      "width": 64,
+      "height": 36
+    },
+    "moduleQuantity": 12,
+    "pixelDensity": 101.6,
+    "brightness": 4500,
+    "refreshRate": 3840,
+    "environment": "Indoor",
+    "maxPowerConsumption": 1200,
+    "avgPowerConsumption": 800,
+    "weightPerCabinet": 15.5,
+    "processorPrice": 25000,
+    "userType": "endUser"
+  },
+  "cabinetGrid": {
+    "columns": 4,
+    "rows": 3
+  },
+  "message": "Hi, I'm interested in purchasing this LED display for our conference room. We need it to be installed by the end of this month. Please provide a detailed quote including installation costs and warranty information. Also, we would like to know about the maintenance requirements and if you provide any training for our staff.",
+  "displaySize": {
+    "width": 1920,
+    "height": 810
+  },
+  "aspectRatio": "16:9",
+  "processor": "Intel i5-10400",
+  "mode": "Standard",
+  "userType": "endUser"
+} 
