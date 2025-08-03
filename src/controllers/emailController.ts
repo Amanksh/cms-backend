@@ -65,6 +65,8 @@ interface QuoteRequest {
   mode?: string;
   // User type at root level for backward compatibility
   userType?: 'endUser' | 'siChannel' | 'reseller';
+  // Total price calculation
+  totalPrice?: number;
 }
 
 /**
@@ -295,7 +297,7 @@ function generateQuoteRequestEmail(data: QuoteRequest): string {
               ${data.displaySize ? `
               <div class="info-item">
                 <strong>Display Size</strong>
-                <span>${data.displaySize.width}mm × ${data.displaySize.height}mm</span>
+                <span>${data.displaySize.width}m × ${data.displaySize.height}m</span>
               </div>
               ` : ''}
               ${data.aspectRatio ? `
@@ -347,6 +349,25 @@ function generateQuoteRequestEmail(data: QuoteRequest): string {
               ` : ''}
             </div>
           </div>
+
+          <!-- Pricing Information -->
+          ${data.totalPrice ? `
+          <div class="section">
+            <h2>💰 Pricing Information</h2>
+            <div class="info-grid">
+              <div class="info-item" style="background: #e8f5e8; border-left-color: #28a745;">
+                <strong>Total Price</strong>
+                <span style="color: #28a745; font-size: 18px; font-weight: 600;">₹${data.totalPrice.toLocaleString()}</span>
+              </div>
+              ${data.product.processorPrice ? `
+              <div class="info-item">
+                <strong>Processor Cost</strong>
+                <span>₹${data.product.processorPrice.toLocaleString()}</span>
+              </div>
+              ` : ''}
+            </div>
+          </div>
+          ` : ''}
 
           <!-- Display Configuration -->
           ${data.cabinetGrid ? `
@@ -449,6 +470,16 @@ function generatePlainTextQuoteRequest(data: QuoteRequest): string {
     text += `Processor Price: ₹${data.product.processorPrice}\n`;
   }
   text += `\n`;
+  
+  if (data.totalPrice) {
+    text += `PRICING INFORMATION\n`;
+    text += `===================\n`;
+    text += `Total Price: ₹${data.totalPrice.toLocaleString()}\n`;
+    if (data.product.processorPrice) {
+      text += `Processor Cost: ₹${data.product.processorPrice.toLocaleString()}\n`;
+    }
+    text += `\n`;
+  }
   
   if (data.cabinetGrid) {
     text += `DISPLAY CONFIGURATION\n`;
