@@ -35,6 +35,9 @@
     "columns": 4,
     "rows": 3
   },
+  "customerName": "John Smith",
+  "customerEmail": "john.smith@techcorp.com",
+  "customerPhone": "+91 98765 43210",
   "message": "Hi, I'm interested in purchasing this LED display for our conference room. We need it to be installed by the end of this month. Please provide a detailed quote including installation costs and warranty information. Also, we would like to know about the maintenance requirements and if you provide any training for our staff.",
   "displaySize": {
     "width": 1920,

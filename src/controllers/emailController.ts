@@ -52,6 +52,10 @@ interface QuoteRequest {
     columns: number;
     rows: number;
   };
+  // User contact information
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
   // User message
   message: string;
   // Calculated display info
@@ -79,10 +83,10 @@ export const handleQuoteRequest = async (req: Request, res: Response) => {
     const quoteData: QuoteRequest = req.body;
 
     // Basic validation
-    if (!quoteData.product?.name || !quoteData.message) {
+    if (!quoteData.product?.name || !quoteData.message || !quoteData.customerName || !quoteData.customerEmail || !quoteData.customerPhone) {
       return res.status(400).json({
         success: false,
-        message: "Product name and message are required fields"
+        message: "Product name, message, customer name, email, and phone number are required fields"
       });
     }
 
@@ -247,6 +251,25 @@ function generateQuoteRequestEmail(data: QuoteRequest): string {
         </div>
         
         <div class="content">
+          <!-- Customer Information -->
+          <div class="section">
+            <h2>👤 Customer Information</h2>
+            <div class="info-grid">
+              <div class="info-item">
+                <strong>Customer Name</strong>
+                <span>${data.customerName}</span>
+              </div>
+              <div class="info-item">
+                <strong>Email Address</strong>
+                <span>${data.customerEmail}</span>
+              </div>
+              <div class="info-item">
+                <strong>Phone Number</strong>
+                <span>${data.customerPhone}</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Product Information -->
           <div class="section">
             <h2>🖥️ Product Information</h2>
@@ -407,7 +430,7 @@ function generateQuoteRequestEmail(data: QuoteRequest): string {
           <div class="section">
             <h2>💬 Customer Message</h2>
             <div class="message-box">
-              <h3>Message from ${userType}</h3>
+              <h3>Message from ${data.customerName} (${userType})</h3>
               <p>${data.message.replace(/\n/g, '<br>')}</p>
             </div>
           </div>
@@ -432,6 +455,12 @@ function generatePlainTextQuoteRequest(data: QuoteRequest): string {
   text += `User Type: ${userType}\n`;
   text += `Date: ${new Date().toLocaleDateString()}\n`;
   text += `Time: ${new Date().toLocaleTimeString()}\n\n`;
+  
+  text += `CUSTOMER INFORMATION\n`;
+  text += `===================\n`;
+  text += `Customer Name: ${data.customerName}\n`;
+  text += `Email Address: ${data.customerEmail}\n`;
+  text += `Phone Number: ${data.customerPhone}\n\n`;
   
   text += `PRODUCT INFORMATION\n`;
   text += `==================\n`;
@@ -497,7 +526,7 @@ function generatePlainTextQuoteRequest(data: QuoteRequest): string {
   
   text += `CUSTOMER MESSAGE\n`;
   text += `================\n`;
-  text += `Message from ${userType}:\n`;
+  text += `Message from ${data.customerName} (${userType}):\n`;
   text += `${data.message}\n\n`;
   
   text += `---\n`;
