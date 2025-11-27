@@ -1,0 +1,358 @@
+{
+  "info": {
+    "_postman_id": "playback-logs-collection",
+    "name": "CMS Playback Logs API",
+    "description": "Proof-of-Play API for Digital Signage CMS.\n\nThis collection contains endpoints for:\n- Logging playback events from digital signage players\n- Generating aggregated playback reports\n- Fetching quick statistics\n\n## Base URL\n`{{baseUrl}}` - Default: http://localhost:5000\n\n## Authentication\nCurrently no authentication required (add as needed).\n\n## Rate Limits\nNo rate limits implemented (add as needed for production).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Playback Logging",
+      "description": "Endpoints for logging playback events",
+      "item": [
+        {
+          "name": "Log Single Playback Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": \"PLAYER_01\",\n  \"asset_id\": \"video1.mp4\",\n  \"playlist_id\": \"PL05\",\n  \"start_time\": \"2025-11-26T10:00:00Z\",\n  \"end_time\": \"2025-11-26T10:00:30Z\",\n  \"duration\": 30\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/log",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "log"]
+            },
+            "description": "Log a single playback event from a digital signage player.\n\n**Required Fields:**\n- `device_id` (string): Unique identifier of the player device\n- `asset_id` (string): ID or filename of the played asset\n- `start_time` (ISO date): When the asset started playing\n- `end_time` (ISO date): When the asset finished playing\n- `duration` (number): Duration in seconds\n\n**Optional Fields:**\n- `playlist_id` (string): ID of the playlist containing the asset"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"count\": 1,\n  \"message\": \"Successfully logged 1 playback event(s)\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Log Multiple Playback Events (Bulk)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"device_id\": \"PLAYER_01\",\n    \"asset_id\": \"video1.mp4\",\n    \"playlist_id\": \"PL05\",\n    \"start_time\": \"2025-11-26T10:00:00Z\",\n    \"end_time\": \"2025-11-26T10:00:30Z\",\n    \"duration\": 30\n  },\n  {\n    \"device_id\": \"PLAYER_01\",\n    \"asset_id\": \"image1.jpg\",\n    \"playlist_id\": \"PL05\",\n    \"start_time\": \"2025-11-26T10:00:30Z\",\n    \"end_time\": \"2025-11-26T10:00:45Z\",\n    \"duration\": 15\n  },\n  {\n    \"device_id\": \"PLAYER_02\",\n    \"asset_id\": \"video1.mp4\",\n    \"playlist_id\": \"PL06\",\n    \"start_time\": \"2025-11-26T10:01:00Z\",\n    \"end_time\": \"2025-11-26T10:01:30Z\",\n    \"duration\": 30\n  }\n]"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/log",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "log"]
+            },
+            "description": "Bulk insert multiple playback events in a single request.\n\nThe endpoint accepts an array of playback log objects. All logs are validated before insertion, and the operation uses MongoDB's insertMany for optimal performance.\n\n**Use Cases:**\n- Players batching logs before sending to reduce API calls\n- Offline sync when player reconnects to network\n- High-frequency playback scenarios"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"count\": 3,\n  \"message\": \"Successfully logged 3 playback event(s)\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Log Event - Validation Error",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"asset_id\": \"video1.mp4\",\n  \"start_time\": \"2025-11-26T10:00:00Z\",\n  \"end_time\": \"2025-11-26T10:00:30Z\",\n  \"duration\": 30\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/log",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "log"]
+            },
+            "description": "Example request with missing required field (device_id) to demonstrate validation error response."
+          },
+          "response": [
+            {
+              "name": "Validation Error Response",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"error\": \"Validation failed for one or more log entries\",\n  \"details\": [\n    {\n      \"index\": 0,\n      \"errors\": [\"device_id is required and must be a string\"]\n    }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Playback Reports",
+      "description": "Endpoints for generating playback reports and statistics",
+      "item": [
+        {
+          "name": "Get All Playback Report",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/report",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "report"]
+            },
+            "description": "Get aggregated playback report for all devices and assets.\n\nReturns play counts and total durations grouped by asset_id, sorted by play_count descending."
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"summary\": [\n    {\n      \"asset_id\": \"video1.mp4\",\n      \"play_count\": 32,\n      \"total_duration\": 850,\n      \"first_played\": \"2025-11-26T08:00:00.000Z\",\n      \"last_played\": \"2025-11-26T18:30:00.000Z\",\n      \"unique_device_count\": 5\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 50,\n    \"total\": 1,\n    \"totalPages\": 1,\n    \"hasNextPage\": false,\n    \"hasPrevPage\": false\n  },\n  \"filters\": {\n    \"device_id\": null,\n    \"asset_id\": null,\n    \"playlist_id\": null,\n    \"date_from\": null,\n    \"date_to\": null\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Report by Device",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/report?device_id=PLAYER_01",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "report"],
+              "query": [
+                {
+                  "key": "device_id",
+                  "value": "PLAYER_01",
+                  "description": "Filter by specific device ID"
+                }
+              ]
+            },
+            "description": "Get playback report filtered by a specific device."
+          }
+        },
+        {
+          "name": "Get Report by Asset",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/report?asset_id=video1.mp4",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "report"],
+              "query": [
+                {
+                  "key": "asset_id",
+                  "value": "video1.mp4",
+                  "description": "Filter by specific asset ID"
+                }
+              ]
+            },
+            "description": "Get playback report for a specific asset across all devices."
+          }
+        },
+        {
+          "name": "Get Report by Playlist",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/report?playlist_id=PL05",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "report"],
+              "query": [
+                {
+                  "key": "playlist_id",
+                  "value": "PL05",
+                  "description": "Filter by specific playlist ID"
+                }
+              ]
+            },
+            "description": "Get playback report for assets in a specific playlist."
+          }
+        },
+        {
+          "name": "Get Report by Date Range",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/report?date_from=2025-11-26T00:00:00Z&date_to=2025-11-26T23:59:59Z",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "report"],
+              "query": [
+                {
+                  "key": "date_from",
+                  "value": "2025-11-26T00:00:00Z",
+                  "description": "Start date (ISO format)"
+                },
+                {
+                  "key": "date_to",
+                  "value": "2025-11-26T23:59:59Z",
+                  "description": "End date (ISO format)"
+                }
+              ]
+            },
+            "description": "Get playback report for a specific date range."
+          }
+        },
+        {
+          "name": "Get Report with All Filters",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/report?device_id=PLAYER_01&playlist_id=PL05&date_from=2025-11-26T00:00:00Z&date_to=2025-11-26T23:59:59Z&page=1&limit=25",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "report"],
+              "query": [
+                {
+                  "key": "device_id",
+                  "value": "PLAYER_01"
+                },
+                {
+                  "key": "playlist_id",
+                  "value": "PL05"
+                },
+                {
+                  "key": "date_from",
+                  "value": "2025-11-26T00:00:00Z"
+                },
+                {
+                  "key": "date_to",
+                  "value": "2025-11-26T23:59:59Z"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "25",
+                  "description": "Results per page (default: 50, max: 1000)"
+                }
+              ]
+            },
+            "description": "Get playback report with multiple filters and pagination."
+          }
+        },
+        {
+          "name": "Get Report with Pagination",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/report?page=2&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "report"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "2",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Results per page"
+                }
+              ]
+            },
+            "description": "Get paginated playback report. Useful for large datasets."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Statistics",
+      "description": "Quick statistics endpoint",
+      "item": [
+        {
+          "name": "Get Overall Stats",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "stats"]
+            },
+            "description": "Get quick overall statistics without detailed breakdown.\n\nReturns:\n- Total play count\n- Total duration\n- Unique asset count\n- Unique device count\n- Unique playlist count\n- First and last play timestamps"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"success\": true,\n  \"stats\": {\n    \"total_plays\": 1250,\n    \"total_duration\": 45000,\n    \"unique_asset_count\": 25,\n    \"unique_device_count\": 10,\n    \"unique_playlist_count\": 5,\n    \"earliest_play\": \"2025-11-01T08:00:00.000Z\",\n    \"latest_play\": \"2025-11-26T18:30:00.000Z\"\n  },\n  \"filters\": {\n    \"date_from\": null,\n    \"date_to\": null\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Stats by Date Range",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/playback/stats?date_from=2025-11-26T00:00:00Z&date_to=2025-11-26T23:59:59Z",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playback", "stats"],
+              "query": [
+                {
+                  "key": "date_from",
+                  "value": "2025-11-26T00:00:00Z"
+                },
+                {
+                  "key": "date_to",
+                  "value": "2025-11-26T23:59:59Z"
+                }
+              ]
+            },
+            "description": "Get statistics for a specific date range."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "Server Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Check if the server is running."
+          },
+          "response": [
+            {
+              "name": "Healthy",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"status\": \"ok\"\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+

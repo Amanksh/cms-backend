@@ -1,0 +1,138 @@
+{
+  "_description": "Sample playback log payloads for testing the Proof-of-Play API",
+  
+  "single_log_example": {
+    "_description": "POST /api/playback/log - Single playback log entry",
+    "device_id": "PLAYER_01",
+    "asset_id": "video1.mp4",
+    "playlist_id": "PL05",
+    "start_time": "2025-11-26T10:00:00Z",
+    "end_time": "2025-11-26T10:00:30Z",
+    "duration": 30
+  },
+  
+  "bulk_logs_example": [
+    {
+      "_description": "POST /api/playback/log - Bulk insert multiple logs",
+      "device_id": "PLAYER_01",
+      "asset_id": "video1.mp4",
+      "playlist_id": "PL05",
+      "start_time": "2025-11-26T10:00:00Z",
+      "end_time": "2025-11-26T10:00:30Z",
+      "duration": 30
+    },
+    {
+      "device_id": "PLAYER_01",
+      "asset_id": "image1.jpg",
+      "playlist_id": "PL05",
+      "start_time": "2025-11-26T10:00:30Z",
+      "end_time": "2025-11-26T10:00:45Z",
+      "duration": 15
+    },
+    {
+      "device_id": "PLAYER_02",
+      "asset_id": "video1.mp4",
+      "playlist_id": "PL06",
+      "start_time": "2025-11-26T10:01:00Z",
+      "end_time": "2025-11-26T10:01:30Z",
+      "duration": 30
+    },
+    {
+      "device_id": "PLAYER_02",
+      "asset_id": "promo_banner.mp4",
+      "playlist_id": "PL06",
+      "start_time": "2025-11-26T10:01:30Z",
+      "end_time": "2025-11-26T10:02:15Z",
+      "duration": 45
+    },
+    {
+      "device_id": "PLAYER_03",
+      "asset_id": "video1.mp4",
+      "start_time": "2025-11-26T10:02:00Z",
+      "end_time": "2025-11-26T10:02:30Z",
+      "duration": 30
+    }
+  ],
+  
+  "stress_test_batch": {
+    "_description": "Example batch for stress testing - array of 10 logs from different devices",
+    "data": [
+      { "device_id": "PLAYER_01", "asset_id": "ad_001.mp4", "playlist_id": "PL_ADS", "start_time": "2025-11-26T08:00:00Z", "end_time": "2025-11-26T08:00:30Z", "duration": 30 },
+      { "device_id": "PLAYER_01", "asset_id": "ad_002.mp4", "playlist_id": "PL_ADS", "start_time": "2025-11-26T08:00:30Z", "end_time": "2025-11-26T08:01:00Z", "duration": 30 },
+      { "device_id": "PLAYER_02", "asset_id": "content_001.mp4", "playlist_id": "PL_MAIN", "start_time": "2025-11-26T08:00:00Z", "end_time": "2025-11-26T08:02:00Z", "duration": 120 },
+      { "device_id": "PLAYER_02", "asset_id": "ad_001.mp4", "playlist_id": "PL_MAIN", "start_time": "2025-11-26T08:02:00Z", "end_time": "2025-11-26T08:02:30Z", "duration": 30 },
+      { "device_id": "PLAYER_03", "asset_id": "welcome.jpg", "playlist_id": "PL_LOBBY", "start_time": "2025-11-26T08:00:00Z", "end_time": "2025-11-26T08:00:10Z", "duration": 10 },
+      { "device_id": "PLAYER_03", "asset_id": "menu.html", "playlist_id": "PL_LOBBY", "start_time": "2025-11-26T08:00:10Z", "end_time": "2025-11-26T08:00:20Z", "duration": 10 },
+      { "device_id": "PLAYER_04", "asset_id": "ad_001.mp4", "playlist_id": "PL_ADS", "start_time": "2025-11-26T08:00:00Z", "end_time": "2025-11-26T08:00:30Z", "duration": 30 },
+      { "device_id": "PLAYER_04", "asset_id": "special_promo.mp4", "playlist_id": "PL_ADS", "start_time": "2025-11-26T08:00:30Z", "end_time": "2025-11-26T08:01:15Z", "duration": 45 },
+      { "device_id": "PLAYER_05", "asset_id": "content_002.mp4", "playlist_id": "PL_MAIN", "start_time": "2025-11-26T08:00:00Z", "end_time": "2025-11-26T08:03:00Z", "duration": 180 },
+      { "device_id": "PLAYER_05", "asset_id": "ad_003.mp4", "playlist_id": "PL_MAIN", "start_time": "2025-11-26T08:03:00Z", "end_time": "2025-11-26T08:03:20Z", "duration": 20 }
+    ]
+  },
+  
+  "report_query_examples": {
+    "_description": "GET /api/playback/report - Query parameter examples",
+    "all_reports": "GET /api/playback/report",
+    "by_device": "GET /api/playback/report?device_id=PLAYER_01",
+    "by_asset": "GET /api/playback/report?asset_id=video1.mp4",
+    "by_playlist": "GET /api/playback/report?playlist_id=PL05",
+    "by_date_range": "GET /api/playback/report?date_from=2025-11-26T00:00:00Z&date_to=2025-11-26T23:59:59Z",
+    "combined_filters": "GET /api/playback/report?device_id=PLAYER_01&date_from=2025-11-26T00:00:00Z&date_to=2025-11-26T23:59:59Z",
+    "with_pagination": "GET /api/playback/report?page=1&limit=25"
+  },
+  
+  "expected_responses": {
+    "log_success": {
+      "success": true,
+      "count": 5,
+      "message": "Successfully logged 5 playback event(s)"
+    },
+    "report_success": {
+      "success": true,
+      "summary": [
+        {
+          "asset_id": "video1.mp4",
+          "play_count": 32,
+          "total_duration": 850,
+          "first_played": "2025-11-26T08:00:00Z",
+          "last_played": "2025-11-26T18:30:00Z",
+          "unique_device_count": 5
+        },
+        {
+          "asset_id": "ad_001.mp4",
+          "play_count": 28,
+          "total_duration": 840,
+          "first_played": "2025-11-26T08:00:30Z",
+          "last_played": "2025-11-26T18:15:00Z",
+          "unique_device_count": 3
+        }
+      ],
+      "pagination": {
+        "page": 1,
+        "limit": 50,
+        "total": 2,
+        "totalPages": 1,
+        "hasNextPage": false,
+        "hasPrevPage": false
+      },
+      "filters": {
+        "device_id": null,
+        "asset_id": null,
+        "playlist_id": null,
+        "date_from": "2025-11-26T00:00:00Z",
+        "date_to": "2025-11-26T23:59:59Z"
+      }
+    },
+    "validation_error": {
+      "success": false,
+      "error": "Validation failed for one or more log entries",
+      "details": [
+        {
+          "index": 0,
+          "errors": ["device_id is required and must be a string"]
+        }
+      ]
+    }
+  }
+}
+

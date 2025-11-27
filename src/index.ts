@@ -4,11 +4,13 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { displayRoutes } from "./routes/display.routes";
 import { emailRoutes } from "./routes/email.routes";
+import { playbackRoutes } from "./routes/playbackLogs";
 
 // Import models to ensure they are registered
 import "./models/Display";
 import "./models/Playlist";
 import "./models/Asset";
+import "./models/PlaybackLog";
 
 // Load environment variables
 dotenv.config();
@@ -28,6 +30,7 @@ mongoose
 // Routes
 app.use("/api/displays", displayRoutes);
 app.use("/api/email", emailRoutes);
+app.use("/api/playback", playbackRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
