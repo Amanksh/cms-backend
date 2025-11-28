@@ -8,6 +8,9 @@ const router = Router();
  * @desc    Handle quote request submissions
  * @access  Public
  */
+router.post("/quote-request", handleQuoteRequest);
+
+// Keep old route for backward compatibility (deprecated)
 router.post("/quota", handleQuoteRequest);
 
 export const emailRoutes = router;

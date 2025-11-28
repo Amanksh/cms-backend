@@ -1,12 +1,13 @@
 import { Request, Response } from "express";
 import { Resend } from "resend";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { config } from "../config";
 
 // Initialize Resend client with API key from environment variables
-const resend = new Resend(process.env.RESEND_API_KEY as string);
-const toEmail = process.env.TO_EMAIL as string;
+// Use a dummy key in development if not provided (emails won't actually send)
+const resend = config.resendApiKey 
+  ? new Resend(config.resendApiKey)
+  : null;
+const toEmail = config.toEmail;
 
 interface QuoteRequest {
   product: {
@@ -94,9 +95,28 @@ export const handleQuoteRequest = async (req: Request, res: Response) => {
     const emailHtml = generateQuoteRequestEmail(quoteData);
     const emailText = generatePlainTextQuoteRequest(quoteData);
 
+    // Check if Resend is configured
+    if (!resend || !toEmail) {
+      // In development, log the email instead of sending
+      if (config.isDevelopment) {
+        console.log("📧 [DEV] Email would be sent to:", toEmail || "NOT_CONFIGURED");
+        console.log("📧 [DEV] Subject:", `New Quote Request: ${quoteData.product.name}`);
+        return res.json({ 
+          success: true, 
+          message: "Quote request logged (email not configured in development)",
+          data: { dev_mode: true } 
+        });
+      }
+      
+      return res.status(500).json({
+        success: false,
+        message: "Email service not configured"
+      });
+    }
+
     // Send the email
     const response = await resend.emails.send({
-      from: process.env.DEFAULT_FROM_EMAIL || "Orion-Connect <no-reply@orionconnect.in>",
+      from: config.defaultFromEmail,
       to: toEmail,
       subject: `New Quote Request: ${quoteData.product.name}`,
       html: emailHtml,

@@ -1,0 +1,45 @@
+# =============================================================================
+# CMS Backend - Production Environment Variables
+# =============================================================================
+# ⚠️  WARNING: This is a TEMPLATE for production deployment
+# Replace all placeholder values with your actual production credentials
+# DO NOT commit this file with real credentials to version control!
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Server Configuration
+# -----------------------------------------------------------------------------
+NODE_ENV=production
+PORT=5000
+
+# -----------------------------------------------------------------------------
+# Database Configuration
+# -----------------------------------------------------------------------------
+# Use MongoDB Atlas or your production MongoDB instance
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/cms?retryWrites=true&w=majority
+
+# -----------------------------------------------------------------------------
+# Email Configuration (Resend)
+# -----------------------------------------------------------------------------
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TO_EMAIL=sales@orionconnect.in
+DEFAULT_FROM_EMAIL=Orion-Connect <no-reply@orionconnect.in>
+
+# -----------------------------------------------------------------------------
+# CORS Configuration
+# -----------------------------------------------------------------------------
+# Add your production frontend URLs and mobile app origins
+CORS_ORIGINS=https://orionconnect.in,https://www.orionconnect.in,https://app.orionconnect.in
+
+# -----------------------------------------------------------------------------
+# Rate Limiting (stricter for production)
+# -----------------------------------------------------------------------------
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=50
+
+# -----------------------------------------------------------------------------
+# API Configuration
+# -----------------------------------------------------------------------------
+# Your production API URL
+API_BASE_URL=https://api.orionconnect.in
+
