@@ -129,14 +129,56 @@ mongoose.connection.on("reconnected", () => {
 // =============================================================================
 
 // Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
+app.get("/health", async (req, res) => {
+  const healthStatus = {
+    status: "healthy",
     timestamp: new Date().toISOString(),
     environment: config.nodeEnv,
     uptime: process.uptime(),
-  });
+    uptimeFormatted: formatUptime(process.uptime()),
+    services: {
+      database: {
+        status: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+        readyState: mongoose.connection.readyState,
+        name: mongoose.connection.name || "unknown",
+      },
+      server: {
+        status: "running",
+        memory: {
+          used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+          total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+          unit: "MB",
+        },
+      },
+    },
+  };
+
+  // Determine overall health status
+  const isHealthy = mongoose.connection.readyState === 1;
+  healthStatus.status = isHealthy ? "healthy" : "degraded";
+
+  // Return appropriate status code
+  const statusCode = isHealthy ? 200 : 503;
+  res.status(statusCode).json(healthStatus);
 });
+
+// Helper function to format uptime
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m ${secs}s`;
+  } else if (hours > 0) {
+    return `${hours}h ${minutes}m ${secs}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${secs}s`;
+  } else {
+    return `${secs}s`;
+  }
+}
 
 // API info endpoint
 app.get("/api", (req, res) => {
