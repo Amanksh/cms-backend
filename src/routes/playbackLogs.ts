@@ -1,14 +1,16 @@
 import { Router, Request, Response } from "express";
-import PlaybackLog, { IPlaybackLog } from "../models/PlaybackLog";
+import PlaybackLog from "../models/PlaybackLog";
 
 /**
- * Playback Logs Routes
+ * Playback Logs Routes (Proof-of-Play)
  * 
  * This module provides API endpoints for:
  * 1. Logging playback events from digital signage players (POST /log)
  * 2. Generating aggregated playback reports (GET /report)
+ * 3. Quick statistics (GET /stats)
  * 
- * Designed for high-volume data ingestion and efficient reporting.
+ * Field names match EXACTLY what Android Player sends:
+ * - deviceId, assetId, playlistId, startTime, endTime, duration
  */
 
 const router = Router();
@@ -17,32 +19,25 @@ const router = Router();
 // Types & Interfaces
 // ============================================================================
 
-// Input format for a single playback log entry
+// Input format matching Android Player payload
 interface PlaybackLogInput {
-  device_id: string;
-  asset_id: string;
-  playlist_id?: string;
-  start_time: string;
-  end_time: string;
+  deviceId: string;
+  assetId: string;
+  playlistId?: string;
+  startTime: string;
+  endTime: string;
   duration: number;
 }
 
 // Query parameters for the report endpoint
 interface ReportQuery {
-  device_id?: string;
-  asset_id?: string;
-  playlist_id?: string;
+  deviceId?: string;
+  assetId?: string;
+  playlistId?: string;
   date_from?: string;
   date_to?: string;
   page?: string;
   limit?: string;
-}
-
-// Summary item in report response
-interface PlaybackSummary {
-  asset_id: string;
-  play_count: number;
-  total_duration: number;
 }
 
 // ============================================================================
@@ -57,21 +52,21 @@ interface PlaybackSummary {
 function validateLogEntry(log: PlaybackLogInput): string[] {
   const errors: string[] = [];
 
-  if (!log.device_id || typeof log.device_id !== "string") {
-    errors.push("device_id is required and must be a string");
+  if (!log.deviceId || typeof log.deviceId !== "string") {
+    errors.push("deviceId is required and must be a string");
   }
-  if (!log.asset_id || typeof log.asset_id !== "string") {
-    errors.push("asset_id is required and must be a string");
+  if (!log.assetId || typeof log.assetId !== "string") {
+    errors.push("assetId is required and must be a string");
   }
-  if (!log.start_time) {
-    errors.push("start_time is required");
-  } else if (isNaN(Date.parse(log.start_time))) {
-    errors.push("start_time must be a valid ISO date string");
+  if (!log.startTime) {
+    errors.push("startTime is required");
+  } else if (isNaN(Date.parse(log.startTime))) {
+    errors.push("startTime must be a valid ISO date string");
   }
-  if (!log.end_time) {
-    errors.push("end_time is required");
-  } else if (isNaN(Date.parse(log.end_time))) {
-    errors.push("end_time must be a valid ISO date string");
+  if (!log.endTime) {
+    errors.push("endTime is required");
+  } else if (isNaN(Date.parse(log.endTime))) {
+    errors.push("endTime must be a valid ISO date string");
   }
   if (log.duration === undefined || log.duration === null) {
     errors.push("duration is required");
@@ -92,9 +87,11 @@ function validateLogEntry(log: PlaybackLogInput): string[] {
  * Accepts single playback log or array of logs from digital signage players.
  * Performs bulk insert for efficiency when handling large batches.
  * 
- * Request Body:
- *   - Single object: { device_id, asset_id, playlist_id?, start_time, end_time, duration }
- *   - Array of objects: [{ ... }, { ... }, ...]
+ * Request Body (Single):
+ *   { deviceId, assetId, playlistId?, startTime, endTime, duration }
+ * 
+ * Request Body (Array):
+ *   [{ deviceId, assetId, playlistId?, startTime, endTime, duration }, ...]
  * 
  * Response:
  *   - Success: { success: true, count: X }
@@ -136,22 +133,18 @@ router.post("/log", async (req: Request, res: Response) => {
 
     // Transform input data to model format
     const documents = logs.map((log) => ({
-      device_id: log.device_id.trim(),
-      asset_id: log.asset_id.trim(),
-      playlist_id: log.playlist_id?.trim() || null,
-      start_time: new Date(log.start_time),
-      end_time: new Date(log.end_time),
+      deviceId: log.deviceId.trim(),
+      assetId: log.assetId.trim(),
+      playlistId: log.playlistId?.trim() || null,
+      startTime: new Date(log.startTime),
+      endTime: new Date(log.endTime),
       duration: log.duration,
-      created_at: new Date(),
+      createdAt: new Date(),
     }));
 
     // Bulk insert for efficiency
-    // Using insertMany with ordered: false allows partial success
-    // (continues inserting even if some documents fail)
     const result = await PlaybackLog.insertMany(documents, {
       ordered: false,
-      // Bypass document validation for performance (we validated above)
-      lean: true,
     });
 
     // Return success response
@@ -163,7 +156,7 @@ router.post("/log", async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Error logging playback:", error);
 
-    // Handle duplicate key errors (if any unique constraints exist)
+    // Handle duplicate key errors
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -199,30 +192,22 @@ router.post("/log", async (req: Request, res: Response) => {
  * GET /api/playback/report
  * 
  * Generates aggregated playback reports with filtering and pagination.
- * Uses MongoDB aggregation pipeline for efficient server-side processing.
  * 
  * Query Parameters:
- *   - device_id: Filter by specific device
- *   - asset_id: Filter by specific asset
- *   - playlist_id: Filter by specific playlist
+ *   - deviceId: Filter by specific device
+ *   - assetId: Filter by specific asset
+ *   - playlistId: Filter by specific playlist
  *   - date_from: Start date for time range (ISO format)
  *   - date_to: End date for time range (ISO format)
  *   - page: Page number for pagination (default: 1)
  *   - limit: Results per page (default: 50, max: 1000)
- * 
- * Response:
- *   {
- *     success: true,
- *     summary: [{ asset_id, play_count, total_duration }, ...],
- *     pagination: { page, limit, total, totalPages }
- *   }
  */
 router.get("/report", async (req: Request, res: Response) => {
   try {
     const {
-      device_id,
-      asset_id,
-      playlist_id,
+      deviceId,
+      assetId,
+      playlistId,
       date_from,
       date_to,
       page = "1",
@@ -237,24 +222,21 @@ router.get("/report", async (req: Request, res: Response) => {
     // Build match stage for filtering
     const matchStage: Record<string, any> = {};
 
-    // Filter by device_id if provided
-    if (device_id) {
-      matchStage.device_id = device_id;
+    if (deviceId) {
+      matchStage.deviceId = deviceId;
     }
 
-    // Filter by asset_id if provided
-    if (asset_id) {
-      matchStage.asset_id = asset_id;
+    if (assetId) {
+      matchStage.assetId = assetId;
     }
 
-    // Filter by playlist_id if provided
-    if (playlist_id) {
-      matchStage.playlist_id = playlist_id;
+    if (playlistId) {
+      matchStage.playlistId = playlistId;
     }
 
     // Filter by date range if provided
     if (date_from || date_to) {
-      matchStage.start_time = {};
+      matchStage.startTime = {};
       
       if (date_from) {
         const fromDate = new Date(date_from);
@@ -264,7 +246,7 @@ router.get("/report", async (req: Request, res: Response) => {
             error: "Invalid date_from format. Use ISO date format (e.g., 2025-11-26T00:00:00Z)",
           });
         }
-        matchStage.start_time.$gte = fromDate;
+        matchStage.startTime.$gte = fromDate;
       }
       
       if (date_to) {
@@ -275,7 +257,7 @@ router.get("/report", async (req: Request, res: Response) => {
             error: "Invalid date_to format. Use ISO date format (e.g., 2025-11-26T23:59:59Z)",
           });
         }
-        matchStage.start_time.$lte = toDate;
+        matchStage.startTime.$lte = toDate;
       }
     }
 
@@ -287,16 +269,15 @@ router.get("/report", async (req: Request, res: Response) => {
       pipeline.push({ $match: matchStage });
     }
 
-    // Stage 2: Group by asset_id and calculate aggregates
+    // Stage 2: Group by assetId and calculate aggregates
     pipeline.push({
       $group: {
-        _id: "$asset_id",
+        _id: "$assetId",
         play_count: { $sum: 1 },
         total_duration: { $sum: "$duration" },
-        // Additional useful metrics
-        first_played: { $min: "$start_time" },
-        last_played: { $max: "$start_time" },
-        unique_devices: { $addToSet: "$device_id" },
+        first_played: { $min: "$startTime" },
+        last_played: { $max: "$startTime" },
+        unique_devices: { $addToSet: "$deviceId" },
       },
     });
 
@@ -304,7 +285,7 @@ router.get("/report", async (req: Request, res: Response) => {
     pipeline.push({
       $project: {
         _id: 0,
-        asset_id: "$_id",
+        assetId: "$_id",
         play_count: 1,
         total_duration: 1,
         first_played: 1,
@@ -313,17 +294,15 @@ router.get("/report", async (req: Request, res: Response) => {
       },
     });
 
-    // Stage 4: Sort by play_count descending (most played first)
+    // Stage 4: Sort by play_count descending
     pipeline.push({ $sort: { play_count: -1 } });
 
-    // Create a facet to get both data and total count efficiently
+    // Create a facet to get both data and total count
     const facetPipeline = [
       ...pipeline,
       {
         $facet: {
-          // Get paginated results
           summary: [{ $skip: skip }, { $limit: limitNum }],
-          // Get total count for pagination
           totalCount: [{ $count: "count" }],
         },
       },
@@ -332,12 +311,11 @@ router.get("/report", async (req: Request, res: Response) => {
     // Execute aggregation
     const results = await PlaybackLog.aggregate(facetPipeline);
 
-    // Extract results from facet
-    const summary: PlaybackSummary[] = results[0]?.summary || [];
+    // Extract results
+    const summary = results[0]?.summary || [];
     const totalCount = results[0]?.totalCount[0]?.count || 0;
     const totalPages = Math.ceil(totalCount / limitNum);
 
-    // Return success response with pagination info
     return res.status(200).json({
       success: true,
       summary,
@@ -350,9 +328,9 @@ router.get("/report", async (req: Request, res: Response) => {
         hasPrevPage: pageNum > 1,
       },
       filters: {
-        device_id: device_id || null,
-        asset_id: asset_id || null,
-        playlist_id: playlist_id || null,
+        deviceId: deviceId || null,
+        assetId: assetId || null,
+        playlistId: playlistId || null,
         date_from: date_from || null,
         date_to: date_to || null,
       },
@@ -369,14 +347,13 @@ router.get("/report", async (req: Request, res: Response) => {
 });
 
 // ============================================================================
-// GET /stats - Quick Statistics Endpoint (Bonus)
+// GET /stats - Quick Statistics Endpoint
 // ============================================================================
 
 /**
  * GET /api/playback/stats
  * 
  * Returns quick overall statistics without detailed breakdown.
- * Useful for dashboards and monitoring.
  */
 router.get("/stats", async (req: Request, res: Response) => {
   try {
@@ -386,12 +363,12 @@ router.get("/stats", async (req: Request, res: Response) => {
     const matchStage: Record<string, any> = {};
     
     if (date_from || date_to) {
-      matchStage.start_time = {};
-      if (date_from) matchStage.start_time.$gte = new Date(date_from);
-      if (date_to) matchStage.start_time.$lte = new Date(date_to);
+      matchStage.startTime = {};
+      if (date_from) matchStage.startTime.$gte = new Date(date_from);
+      if (date_to) matchStage.startTime.$lte = new Date(date_to);
     }
 
-    // Build aggregation pipeline for stats
+    // Build aggregation pipeline
     const pipeline: any[] = [];
     
     if (Object.keys(matchStage).length > 0) {
@@ -403,11 +380,11 @@ router.get("/stats", async (req: Request, res: Response) => {
         _id: null,
         total_plays: { $sum: 1 },
         total_duration: { $sum: "$duration" },
-        unique_assets: { $addToSet: "$asset_id" },
-        unique_devices: { $addToSet: "$device_id" },
-        unique_playlists: { $addToSet: "$playlist_id" },
-        earliest_play: { $min: "$start_time" },
-        latest_play: { $max: "$start_time" },
+        unique_assets: { $addToSet: "$assetId" },
+        unique_devices: { $addToSet: "$deviceId" },
+        unique_playlists: { $addToSet: "$playlistId" },
+        earliest_play: { $min: "$startTime" },
+        latest_play: { $max: "$startTime" },
       },
     });
 
@@ -462,6 +439,75 @@ router.get("/stats", async (req: Request, res: Response) => {
   }
 });
 
+// ============================================================================
+// GET /logs - Get Raw Logs (for debugging/dashboard)
+// ============================================================================
+
+/**
+ * GET /api/playback/logs
+ * 
+ * Returns raw playback logs with pagination.
+ */
+router.get("/logs", async (req: Request, res: Response) => {
+  try {
+    const {
+      deviceId,
+      assetId,
+      playlistId,
+      date_from,
+      date_to,
+      page = "1",
+      limit = "50",
+    } = req.query as ReportQuery;
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build filter
+    const filter: Record<string, any> = {};
+
+    if (deviceId) filter.deviceId = deviceId;
+    if (assetId) filter.assetId = assetId;
+    if (playlistId) filter.playlistId = playlistId;
+
+    if (date_from || date_to) {
+      filter.startTime = {};
+      if (date_from) filter.startTime.$gte = new Date(date_from);
+      if (date_to) filter.startTime.$lte = new Date(date_to);
+    }
+
+    const [logs, totalCount] = await Promise.all([
+      PlaybackLog.find(filter)
+        .sort({ startTime: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      PlaybackLog.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    return res.status(200).json({
+      success: true,
+      data: logs,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: totalCount,
+        totalPages,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error fetching playback logs:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error while fetching logs",
+    });
+  }
+});
+
 // Export the router
 export const playbackRoutes = router;
-

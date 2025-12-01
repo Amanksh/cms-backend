@@ -1,55 +1,55 @@
 {
-  "_description": "Sample playback log payloads for testing the Proof-of-Play API",
+  "_description": "Sample playback log payloads for testing the Proof-of-Play API (camelCase to match Android Player)",
   
   "single_log_example": {
     "_description": "POST /api/playback/log - Single playback log entry",
-    "device_id": "PLAYER_01",
-    "asset_id": "video1.mp4",
-    "playlist_id": "PL05",
-    "start_time": "2025-11-26T10:00:00Z",
-    "end_time": "2025-11-26T10:00:30Z",
+    "deviceId": "PLAYER_01",
+    "assetId": "video1.mp4",
+    "playlistId": "PL05",
+    "startTime": "2025-11-26T10:00:00Z",
+    "endTime": "2025-11-26T10:00:30Z",
     "duration": 30
   },
   
   "bulk_logs_example": [
     {
       "_description": "POST /api/playback/log - Bulk insert multiple logs",
-      "device_id": "PLAYER_01",
-      "asset_id": "video1.mp4",
-      "playlist_id": "PL05",
-      "start_time": "2025-11-26T10:00:00Z",
-      "end_time": "2025-11-26T10:00:30Z",
+      "deviceId": "PLAYER_01",
+      "assetId": "video1.mp4",
+      "playlistId": "PL05",
+      "startTime": "2025-11-26T10:00:00Z",
+      "endTime": "2025-11-26T10:00:30Z",
       "duration": 30
     },
     {
-      "device_id": "PLAYER_01",
-      "asset_id": "image1.jpg",
-      "playlist_id": "PL05",
-      "start_time": "2025-11-26T10:00:30Z",
-      "end_time": "2025-11-26T10:00:45Z",
+      "deviceId": "PLAYER_01",
+      "assetId": "image1.jpg",
+      "playlistId": "PL05",
+      "startTime": "2025-11-26T10:00:30Z",
+      "endTime": "2025-11-26T10:00:45Z",
       "duration": 15
     },
     {
-      "device_id": "PLAYER_02",
-      "asset_id": "video1.mp4",
-      "playlist_id": "PL06",
-      "start_time": "2025-11-26T10:01:00Z",
-      "end_time": "2025-11-26T10:01:30Z",
+      "deviceId": "PLAYER_02",
+      "assetId": "video1.mp4",
+      "playlistId": "PL06",
+      "startTime": "2025-11-26T10:01:00Z",
+      "endTime": "2025-11-26T10:01:30Z",
       "duration": 30
     },
     {
-      "device_id": "PLAYER_02",
-      "asset_id": "promo_banner.mp4",
-      "playlist_id": "PL06",
-      "start_time": "2025-11-26T10:01:30Z",
-      "end_time": "2025-11-26T10:02:15Z",
+      "deviceId": "PLAYER_02",
+      "assetId": "promo_banner.mp4",
+      "playlistId": "PL06",
+      "startTime": "2025-11-26T10:01:30Z",
+      "endTime": "2025-11-26T10:02:15Z",
       "duration": 45
     },
     {
-      "device_id": "PLAYER_03",
-      "asset_id": "video1.mp4",
-      "start_time": "2025-11-26T10:02:00Z",
-      "end_time": "2025-11-26T10:02:30Z",
+      "deviceId": "PLAYER_03",
+      "assetId": "video1.mp4",
+      "startTime": "2025-11-26T10:02:00Z",
+      "endTime": "2025-11-26T10:02:30Z",
       "duration": 30
     }
   ],
