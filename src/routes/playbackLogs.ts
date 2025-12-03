@@ -461,4 +461,275 @@ router.get("/logs", async (req: Request, res: Response) => {
   }
 });
 
+// ============================================================================
+// GET /dashboard - Dashboard-Ready Playback Data
+// ============================================================================
+
+/**
+ * GET /api/playback/dashboard
+ * 
+ * Returns playback data formatted for dashboard display with:
+ * - Recent logs with asset names
+ * - Hourly/daily breakdown
+ * - Device activity summary
+ */
+router.get("/dashboard", async (req: Request, res: Response) => {
+  try {
+    const { hours = "24" } = req.query;
+    const hoursNum = parseInt(hours as string, 10) || 24;
+    
+    const since = new Date();
+    since.setHours(since.getHours() - hoursNum);
+
+    // Get recent logs
+    const recentLogs = await PlaybackLog.find({
+      start_time: { $gte: since }
+    })
+      .sort({ start_time: -1 })
+      .limit(100)
+      .lean();
+
+    // Get hourly breakdown
+    const hourlyStats = await PlaybackLog.aggregate([
+      { $match: { start_time: { $gte: since } } },
+      {
+        $group: {
+          _id: {
+            hour: { $hour: "$start_time" },
+            day: { $dayOfMonth: "$start_time" },
+            month: { $month: "$start_time" }
+          },
+          play_count: { $sum: 1 },
+          total_duration: { $sum: "$duration" },
+        },
+      },
+      { $sort: { "_id.month": 1, "_id.day": 1, "_id.hour": 1 } },
+    ]);
+
+    // Get device activity
+    const deviceActivity = await PlaybackLog.aggregate([
+      { $match: { start_time: { $gte: since } } },
+      {
+        $group: {
+          _id: "$device_id",
+          play_count: { $sum: 1 },
+          total_duration: { $sum: "$duration" },
+          last_active: { $max: "$start_time" },
+          first_active: { $min: "$start_time" },
+        },
+      },
+      { $sort: { last_active: -1 } },
+    ]);
+
+    // Get asset popularity
+    const assetPopularity = await PlaybackLog.aggregate([
+      { $match: { start_time: { $gte: since } } },
+      {
+        $group: {
+          _id: "$asset_id",
+          play_count: { $sum: 1 },
+          total_duration: { $sum: "$duration" },
+        },
+      },
+      { $sort: { play_count: -1 } },
+      { $limit: 10 },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      timeRange: {
+        from: since.toISOString(),
+        to: new Date().toISOString(),
+        hours: hoursNum,
+      },
+      summary: {
+        total_logs: recentLogs.length,
+        total_duration: recentLogs.reduce((sum, log: any) => sum + (log.duration || 0), 0),
+        unique_devices: deviceActivity.length,
+        unique_assets: assetPopularity.length,
+      },
+      recentLogs: recentLogs.slice(0, 20),
+      hourlyStats,
+      deviceActivity,
+      assetPopularity,
+    });
+  } catch (error: any) {
+    console.error("Error fetching dashboard data:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error",
+    });
+  }
+});
+
+// ============================================================================
+// GET /analysis - Playback Timing Analysis
+// ============================================================================
+
+/**
+ * GET /api/playback/analysis
+ * 
+ * Analyzes playback patterns:
+ * - Time gaps between log entries
+ * - Batch submission patterns
+ * - Average playback duration
+ */
+router.get("/analysis", async (req: Request, res: Response) => {
+  try {
+    const { device_id, limit = "100" } = req.query;
+    const limitNum = Math.min(500, parseInt(limit as string, 10) || 100);
+
+    const filter: Record<string, any> = {};
+    if (device_id) filter.device_id = device_id;
+
+    // Get logs sorted by start_time
+    const logs = await PlaybackLog.find(filter)
+      .sort({ start_time: -1 })
+      .limit(limitNum)
+      .lean();
+
+    if (logs.length < 2) {
+      return res.status(200).json({
+        success: true,
+        message: "Not enough logs for analysis",
+        data: logs,
+      });
+    }
+
+    // Analyze time gaps between playbacks
+    const playbackGaps: number[] = [];
+    const submissionGaps: number[] = [];
+    const durations: number[] = [];
+
+    for (let i = 0; i < logs.length - 1; i++) {
+      const current = logs[i] as any;
+      const next = logs[i + 1] as any;
+
+      // Gap between end of one playback and start of next
+      const startTime = new Date(current.start_time).getTime();
+      const nextStartTime = new Date(next.start_time).getTime();
+      const playbackGap = (startTime - nextStartTime) / 1000; // in seconds
+      playbackGaps.push(playbackGap);
+
+      // Gap between log submissions
+      const createdAt = new Date(current.created_at).getTime();
+      const nextCreatedAt = new Date(next.created_at).getTime();
+      const submissionGap = (createdAt - nextCreatedAt) / 1000; // in seconds
+      submissionGaps.push(submissionGap);
+
+      // Duration
+      durations.push(current.duration || 0);
+    }
+    durations.push((logs[logs.length - 1] as any).duration || 0);
+
+    // Calculate statistics
+    const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+    const min = (arr: number[]) => arr.length ? Math.min(...arr) : 0;
+    const max = (arr: number[]) => arr.length ? Math.max(...arr) : 0;
+
+    // Find batch submissions (logs with same created_at)
+    const createdAtCounts: Record<string, number> = {};
+    logs.forEach((log: any) => {
+      const key = log.created_at?.toString() || "unknown";
+      createdAtCounts[key] = (createdAtCounts[key] || 0) + 1;
+    });
+    const batchSizes = Object.values(createdAtCounts);
+    const batchCount = batchSizes.filter(size => size > 1).length;
+
+    return res.status(200).json({
+      success: true,
+      analysis: {
+        logsAnalyzed: logs.length,
+        playbackGaps: {
+          description: "Time between consecutive playbacks (seconds)",
+          average: Math.round(avg(playbackGaps) * 100) / 100,
+          min: Math.round(min(playbackGaps) * 100) / 100,
+          max: Math.round(max(playbackGaps) * 100) / 100,
+        },
+        submissionPattern: {
+          description: "How Android Player submits logs",
+          averageGapBetweenSubmissions: Math.round(avg(submissionGaps) * 100) / 100,
+          batchSubmissions: batchCount,
+          averageBatchSize: Math.round(avg(batchSizes) * 100) / 100,
+          maxBatchSize: max(batchSizes),
+        },
+        duration: {
+          description: "Asset playback duration (seconds)",
+          average: Math.round(avg(durations) * 100) / 100,
+          min: min(durations),
+          max: max(durations),
+        },
+      },
+      sampleLogs: logs.slice(0, 5),
+    });
+  } catch (error: any) {
+    console.error("Error analyzing playback:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error",
+    });
+  }
+});
+
+// ============================================================================
+// GET /timeline - Timeline View for Dashboard
+// ============================================================================
+
+/**
+ * GET /api/playback/timeline
+ * 
+ * Returns playback logs in timeline format for visualization
+ */
+router.get("/timeline", async (req: Request, res: Response) => {
+  try {
+    const { device_id, date, limit = "50" } = req.query;
+    const limitNum = Math.min(200, parseInt(limit as string, 10) || 50);
+
+    const filter: Record<string, any> = {};
+    if (device_id) filter.device_id = device_id;
+
+    // If date provided, filter to that day
+    if (date) {
+      const startOfDay = new Date(date as string);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date as string);
+      endOfDay.setHours(23, 59, 59, 999);
+      filter.start_time = { $gte: startOfDay, $lte: endOfDay };
+    }
+
+    const logs = await PlaybackLog.find(filter)
+      .sort({ start_time: -1 })
+      .limit(limitNum)
+      .lean();
+
+    // Format for timeline
+    const timeline = logs.map((log: any, index: number) => ({
+      id: log._id,
+      deviceId: log.device_id,
+      assetId: log.asset_id,
+      playlistId: log.playlist_id,
+      startTime: log.start_time,
+      endTime: log.end_time,
+      duration: log.duration,
+      createdAt: log.created_at,
+      // Calculate gap to next playback
+      gapToNext: index < logs.length - 1
+        ? Math.round((new Date(log.start_time).getTime() - new Date((logs[index + 1] as any).start_time).getTime()) / 1000)
+        : null,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      count: timeline.length,
+      timeline,
+    });
+  } catch (error: any) {
+    console.error("Error fetching timeline:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error",
+    });
+  }
+});
+
 export const playbackRoutes = router;
