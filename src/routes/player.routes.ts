@@ -9,8 +9,28 @@ import mongoose from "mongoose";
  * Player Routes
  * 
  * API endpoints specifically designed for Android/Digital Signage Players.
- * These endpoints return fully expanded playlists with all campaign assets
- * in the correct playback order.
+ * These endpoints return FLATTENED playlists with all assets (from campaigns
+ * and direct assets) in the correct playback order.
+ * 
+ * Response Format for Player:
+ * {
+ *   "playlistId": "...",
+ *   "assets": [
+ *     {
+ *       "assetId": "...",
+ *       "type": "VIDEO",
+ *       "url": "...",
+ *       "duration": 10,
+ *       "campaignId": "..." (optional, null for direct assets)
+ *     }
+ *   ]
+ * }
+ * 
+ * Supports:
+ * - Campaigns (folders) containing multiple assets (max 8-9 per campaign)
+ * - Direct assets (standalone assets not in any campaign)
+ * - Playlists with 6-7 campaigns
+ * - Mixed content playlists (campaigns + direct assets)
  */
 
 const router = Router();
@@ -19,60 +39,43 @@ const router = Router();
 // Types & Interfaces
 // ============================================================================
 
-interface ExpandedAsset {
+interface FlattenedAsset {
   assetId: string;
-  name: string;
-  campaignId: string;
-  campaignName: string;
   type: "IMAGE" | "VIDEO" | "HTML" | "URL";
   url: string;
-  localPath?: string;
-  thumbnail?: string;
   duration: number;
-  size: number;
-  order: number;
+  campaignId: string | null;
+  name?: string;
+  thumbnail?: string;
 }
 
 interface PlayerPlaylistResponse {
   playlistId: string;
-  playlistName: string;
-  status: string;
+  playlistName?: string;
+  status?: string;
   totalAssets: number;
-  totalDuration: number;
-  assets: ExpandedAsset[];
-  campaigns: {
-    id: string;
-    name: string;
-    assetCount: number;
-  }[];
-  schedule?: {
-    startDate: Date;
-    endDate: Date;
-    daysOfWeek: number[];
-    startTime: string;
-    endTime: string;
-  };
-  updatedAt: Date;
+  assets: FlattenedAsset[];
 }
 
 // ============================================================================
-// GET /player/playlist - Get Playlist for Player
+// GET /player/playlist - Get Playlist for Player (Flattened)
 // ============================================================================
 
 /**
  * GET /api/player/playlist
  * 
- * Returns a fully expanded playlist with all assets from all campaigns
- * in the correct playback order.
+ * Returns a FLATTENED playlist with all assets from:
+ * 1. All campaigns (expanded to individual assets)
+ * 2. All direct assets
  * 
  * Query Parameters:
  *   - playlistId: The playlist ID to fetch
  *   - deviceId: Optional device ID for device-specific playlist
  * 
- * Response includes:
- *   - Expanded list of all assets inside selected campaigns
- *   - Assets in correct playback order (by campaign order, then asset order)
- *   - campaignName, assetId, type, url/localPath, duration for each asset
+ * Response: Flattened array of assets with:
+ *   - assetId, type, url, duration, campaignId (optional)
+ * 
+ * NOTE: Does NOT return campaignIds - returns FLATTENED assets array
  */
 router.get("/playlist", async (req: Request, res: Response) => {
   try {
@@ -103,13 +106,8 @@ router.get("/playlist", async (req: Request, res: Response) => {
       });
     }
 
-    // Get playlist with campaigns
-    const playlist = await Playlist.findById(targetPlaylistId)
-      .populate({
-        path: "campaignIds",
-        select: "name description",
-      })
-      .lean() as any;
+    // Get playlist
+    const playlist = await Playlist.findById(targetPlaylistId).lean() as any;
 
     if (!playlist) {
       return res.status(404).json({
@@ -121,101 +119,98 @@ router.get("/playlist", async (req: Request, res: Response) => {
     // Check if playlist is active or scheduled
     if (playlist.status === "inactive") {
       return res.status(200).json({
-        success: true,
-        message: "Playlist is inactive",
-        data: {
-          playlistId: playlist._id,
-          playlistName: playlist.name,
-          status: playlist.status,
-          totalAssets: 0,
-          totalDuration: 0,
-          assets: [],
-          campaigns: [],
-        },
+        playlistId: playlist._id.toString(),
+        playlistName: playlist.name,
+        status: playlist.status,
+        totalAssets: 0,
+        assets: [],
       });
     }
 
-    // Get campaign IDs in order
-    const campaignIds = (playlist.campaignIds || []).map((c: any) => c._id);
-    const campaignsMap = new Map(
-      (playlist.campaignIds || []).map((c: any) => [c._id.toString(), c])
-    );
+    // Build flattened assets array
+    const flattenedAssets: FlattenedAsset[] = [];
 
-    // Get all assets for all campaigns
-    const assets = await Asset.find({
-      campaignId: { $in: campaignIds },
-    })
-      .sort({ createdAt: 1 })
-      .lean() as any[];
+    // 1. Expand campaigns to get their assets (in order)
+    if (playlist.campaignIds && playlist.campaignIds.length > 0) {
+      for (const campaignId of playlist.campaignIds) {
+        // Get campaign assets
+        const campaignAssets = await Asset.find({ campaignId })
+          .select("_id name type url thumbnail duration")
+          .sort({ createdAt: 1 })
+          .lean() as any[];
 
-    // Group assets by campaign
-    const assetsByCampaign = new Map<string, any[]>();
-    assets.forEach(asset => {
-      const campaignIdStr = asset.campaignId.toString();
-      if (!assetsByCampaign.has(campaignIdStr)) {
-        assetsByCampaign.set(campaignIdStr, []);
+        // Add each asset with campaign reference
+        for (const asset of campaignAssets) {
+          flattenedAssets.push({
+            assetId: asset._id.toString(),
+            type: asset.type,
+            url: asset.url,
+            duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
+            campaignId: campaignId.toString(),
+            name: asset.name,
+            thumbnail: asset.thumbnail || undefined,
+          });
+        }
       }
-      assetsByCampaign.get(campaignIdStr)!.push(asset);
-    });
+    }
 
-    // Build expanded assets list in playback order
-    const expandedAssets: ExpandedAsset[] = [];
-    let globalOrder = 0;
-    let totalDuration = 0;
+    // 2. Add direct assets (standalone assets not in any campaign)
+    if (playlist.assetIds && playlist.assetIds.length > 0) {
+      const directAssets = await Asset.find({
+        _id: { $in: playlist.assetIds },
+      })
+        .select("_id name type url thumbnail duration")
+        .sort({ createdAt: 1 })
+        .lean() as any[];
 
-    // Process campaigns in their playlist order
-    for (const campaignId of campaignIds) {
-      const campaignIdStr = campaignId.toString();
-      const campaign = campaignsMap.get(campaignIdStr);
-      const campaignAssets = assetsByCampaign.get(campaignIdStr) || [];
-
-      for (const asset of campaignAssets) {
-        const assetDuration = asset.duration || 10; // Default 10 seconds for images
-        totalDuration += assetDuration;
-
-        expandedAssets.push({
+      for (const asset of directAssets) {
+        flattenedAssets.push({
           assetId: asset._id.toString(),
-          name: asset.name,
-          campaignId: campaignIdStr,
-          campaignName: (campaign as any)?.name || "Unknown Campaign",
           type: asset.type,
           url: asset.url,
-          localPath: asset.url, // Can be updated to local cache path by player
-          thumbnail: asset.thumbnail,
-          duration: assetDuration,
-          size: asset.size,
-          order: globalOrder++,
+          duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
+          campaignId: null, // Direct asset - no campaign
+          name: asset.name,
+          thumbnail: asset.thumbnail || undefined,
         });
       }
     }
 
-    // Build campaign summary
-    const campaignSummary = campaignIds.map((campaignId: any) => {
-      const campaignIdStr = campaignId.toString();
-      const campaign = campaignsMap.get(campaignIdStr);
-      return {
-        id: campaignIdStr,
-        name: (campaign as any)?.name || "Unknown Campaign",
-        assetCount: (assetsByCampaign.get(campaignIdStr) || []).length,
-      };
-    });
+    // 3. Legacy support: If no campaigns/direct assets but has items, use items
+    if (
+      flattenedAssets.length === 0 &&
+      playlist.items &&
+      playlist.items.length > 0
+    ) {
+      for (const item of playlist.items) {
+        if (item.assetId) {
+          const asset = await Asset.findById(item.assetId).lean() as any;
+          if (asset) {
+            flattenedAssets.push({
+              assetId: asset._id.toString(),
+              type: asset.type,
+              url: asset.url,
+              duration: item.duration || asset.duration || 10,
+              campaignId: null, // Legacy items don't have campaign
+              name: asset.name,
+              thumbnail: asset.thumbnail || undefined,
+            });
+          }
+        }
+      }
+    }
 
+    // Return the exact format for Android player
+    // DO NOT return campaignIds - return FLATTENED assets
     const response: PlayerPlaylistResponse = {
       playlistId: playlist._id.toString(),
       playlistName: playlist.name,
       status: playlist.status,
-      totalAssets: expandedAssets.length,
-      totalDuration,
-      assets: expandedAssets,
-      campaigns: campaignSummary,
-      schedule: playlist.schedule,
-      updatedAt: playlist.updatedAt,
+      totalAssets: flattenedAssets.length,
+      assets: flattenedAssets,
     };
 
-    return res.status(200).json({
-      success: true,
-      data: response,
-    });
+    return res.status(200).json(response);
   } catch (error: any) {
     console.error("Error fetching player playlist:", error);
     return res.status(500).json({
@@ -227,13 +222,14 @@ router.get("/playlist", async (req: Request, res: Response) => {
 });
 
 // ============================================================================
-// GET /player/playlist/:id - Get Specific Playlist for Player
+// GET /player/playlist/:id - Get Specific Playlist for Player (Flattened)
 // ============================================================================
 
 /**
  * GET /api/player/playlist/:id
  * 
  * Alternative endpoint to get a specific playlist by ID.
+ * Returns FLATTENED assets array - same format as /player/playlist
  */
 router.get("/playlist/:id", async (req: Request, res: Response) => {
   try {
@@ -247,13 +243,8 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
       });
     }
 
-    // Get playlist with campaigns
-    const playlist = await Playlist.findById(id)
-      .populate({
-        path: "campaignIds",
-        select: "name description",
-      })
-      .lean() as any;
+    // Get playlist
+    const playlist = await Playlist.findById(id).lean() as any;
 
     if (!playlist) {
       return res.status(404).json({
@@ -262,86 +253,86 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
       });
     }
 
-    // Get campaign IDs in order
-    const campaignIds = (playlist.campaignIds || []).map((c: any) => c._id);
-    const campaignsMap = new Map(
-      (playlist.campaignIds || []).map((c: any) => [c._id.toString(), c])
-    );
+    // Build flattened assets array
+    const flattenedAssets: FlattenedAsset[] = [];
 
-    // Get all assets for all campaigns
-    const assets = await Asset.find({
-      campaignId: { $in: campaignIds },
-    })
-      .sort({ createdAt: 1 })
-      .lean() as any[];
+    // 1. Expand campaigns to get their assets (in order)
+    if (playlist.campaignIds && playlist.campaignIds.length > 0) {
+      for (const campaignId of playlist.campaignIds) {
+        const campaignAssets = await Asset.find({ campaignId })
+          .select("_id name type url thumbnail duration")
+          .sort({ createdAt: 1 })
+          .lean() as any[];
 
-    // Group assets by campaign
-    const assetsByCampaign = new Map<string, any[]>();
-    assets.forEach(asset => {
-      const campaignIdStr = asset.campaignId.toString();
-      if (!assetsByCampaign.has(campaignIdStr)) {
-        assetsByCampaign.set(campaignIdStr, []);
+        for (const asset of campaignAssets) {
+          flattenedAssets.push({
+            assetId: asset._id.toString(),
+            type: asset.type,
+            url: asset.url,
+            duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
+            campaignId: campaignId.toString(),
+            name: asset.name,
+            thumbnail: asset.thumbnail || undefined,
+          });
+        }
       }
-      assetsByCampaign.get(campaignIdStr)!.push(asset);
-    });
+    }
 
-    // Build expanded assets list in playback order
-    const expandedAssets: ExpandedAsset[] = [];
-    let globalOrder = 0;
-    let totalDuration = 0;
+    // 2. Add direct assets
+    if (playlist.assetIds && playlist.assetIds.length > 0) {
+      const directAssets = await Asset.find({
+        _id: { $in: playlist.assetIds },
+      })
+        .select("_id name type url thumbnail duration")
+        .sort({ createdAt: 1 })
+        .lean() as any[];
 
-    for (const campaignId of campaignIds) {
-      const campaignIdStr = campaignId.toString();
-      const campaign = campaignsMap.get(campaignIdStr);
-      const campaignAssets = assetsByCampaign.get(campaignIdStr) || [];
-
-      for (const asset of campaignAssets) {
-        const assetDuration = asset.duration || 10;
-        totalDuration += assetDuration;
-
-        expandedAssets.push({
+      for (const asset of directAssets) {
+        flattenedAssets.push({
           assetId: asset._id.toString(),
-          name: asset.name,
-          campaignId: campaignIdStr,
-          campaignName: (campaign as any)?.name || "Unknown Campaign",
           type: asset.type,
           url: asset.url,
-          localPath: asset.url,
-          thumbnail: asset.thumbnail,
-          duration: assetDuration,
-          size: asset.size,
-          order: globalOrder++,
+          duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
+          campaignId: null,
+          name: asset.name,
+          thumbnail: asset.thumbnail || undefined,
         });
       }
     }
 
-    // Build campaign summary
-    const campaignSummary = campaignIds.map((campaignId: any) => {
-      const campaignIdStr = campaignId.toString();
-      const campaign = campaignsMap.get(campaignIdStr);
-      return {
-        id: campaignIdStr,
-        name: (campaign as any)?.name || "Unknown Campaign",
-        assetCount: (assetsByCampaign.get(campaignIdStr) || []).length,
-      };
-    });
+    // 3. Legacy support
+    if (
+      flattenedAssets.length === 0 &&
+      playlist.items &&
+      playlist.items.length > 0
+    ) {
+      for (const item of playlist.items) {
+        if (item.assetId) {
+          const asset = await Asset.findById(item.assetId).lean() as any;
+          if (asset) {
+            flattenedAssets.push({
+              assetId: asset._id.toString(),
+              type: asset.type,
+              url: asset.url,
+              duration: item.duration || asset.duration || 10,
+              campaignId: null,
+              name: asset.name,
+              thumbnail: asset.thumbnail || undefined,
+            });
+          }
+        }
+      }
+    }
 
     const response: PlayerPlaylistResponse = {
       playlistId: playlist._id.toString(),
       playlistName: playlist.name,
       status: playlist.status,
-      totalAssets: expandedAssets.length,
-      totalDuration,
-      assets: expandedAssets,
-      campaigns: campaignSummary,
-      schedule: playlist.schedule,
-      updatedAt: playlist.updatedAt,
+      totalAssets: flattenedAssets.length,
+      assets: flattenedAssets,
     };
 
-    return res.status(200).json({
-      success: true,
-      data: response,
-    });
+    return res.status(200).json(response);
   } catch (error: any) {
     console.error("Error fetching player playlist:", error);
     return res.status(500).json({
@@ -365,25 +356,29 @@ router.get("/campaigns", async (req: Request, res: Response) => {
   try {
     const campaigns = await Campaign.find().sort({ name: 1 }).lean() as any[];
 
-    // Get all assets
-    const assets = await Asset.find().sort({ campaignId: 1, createdAt: 1 }).lean() as any[];
+    // Get all assets grouped by campaign
+    const assets = await Asset.find({ campaignId: { $ne: null } })
+      .sort({ campaignId: 1, createdAt: 1 })
+      .lean() as any[];
 
     // Group assets by campaign
     const assetsByCampaign = new Map<string, any[]>();
     for (const asset of assets) {
-      const campaignIdStr = asset.campaignId.toString();
-      if (!assetsByCampaign.has(campaignIdStr)) {
-        assetsByCampaign.set(campaignIdStr, []);
+      if (asset.campaignId) {
+        const campaignIdStr = asset.campaignId.toString();
+        if (!assetsByCampaign.has(campaignIdStr)) {
+          assetsByCampaign.set(campaignIdStr, []);
+        }
+        assetsByCampaign.get(campaignIdStr)!.push({
+          assetId: asset._id.toString(),
+          name: asset.name,
+          type: asset.type,
+          url: asset.url,
+          thumbnail: asset.thumbnail,
+          duration: asset.duration || 10,
+          size: asset.size,
+        });
       }
-      assetsByCampaign.get(campaignIdStr)!.push({
-        assetId: asset._id.toString(),
-        name: asset.name,
-        type: asset.type,
-        url: asset.url,
-        thumbnail: asset.thumbnail,
-        duration: asset.duration || 10,
-        size: asset.size,
-      });
     }
 
     const campaignsWithAssets = campaigns.map(campaign => ({
@@ -412,13 +407,54 @@ router.get("/campaigns", async (req: Request, res: Response) => {
 });
 
 // ============================================================================
+// GET /player/direct-assets - List All Direct Assets (Not in Campaigns)
+// ============================================================================
+
+/**
+ * GET /api/player/direct-assets
+ * 
+ * Returns all direct/standalone assets (not in any campaign) for player caching.
+ */
+router.get("/direct-assets", async (req: Request, res: Response) => {
+  try {
+    const directAssets = await Asset.find({ campaignId: null })
+      .sort({ createdAt: -1 })
+      .lean() as any[];
+
+    const formattedAssets = directAssets.map(asset => ({
+      assetId: asset._id.toString(),
+      name: asset.name,
+      type: asset.type,
+      url: asset.url,
+      thumbnail: asset.thumbnail,
+      duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
+      size: asset.size,
+      createdAt: asset.createdAt,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: formattedAssets,
+      totalAssets: directAssets.length,
+    });
+  } catch (error: any) {
+    console.error("Error fetching direct assets for player:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch direct assets for player",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
+// ============================================================================
 // GET /player/asset/:id - Get Single Asset Details for Player
 // ============================================================================
 
 /**
  * GET /api/player/asset/:id
  * 
- * Returns detailed asset information including campaign context.
+ * Returns detailed asset information including campaign context (if any).
  */
 router.get("/asset/:id", async (req: Request, res: Response) => {
   try {
@@ -443,21 +479,26 @@ router.get("/asset/:id", async (req: Request, res: Response) => {
       });
     }
 
-    const campaignId = asset.campaignId?._id?.toString() || asset.campaignId?.toString() || "";
-    const campaignName = asset.campaignId?.name || "Unknown Campaign";
+    // Handle both campaign assets and direct assets
+    let campaignId: string | null = null;
+    let campaignName: string | null = null;
+
+    if (asset.campaignId) {
+      campaignId = asset.campaignId._id?.toString() || asset.campaignId.toString();
+      campaignName = asset.campaignId.name || null;
+    }
 
     return res.status(200).json({
       success: true,
       data: {
         assetId: asset._id.toString(),
         name: asset.name,
-        campaignId,
-        campaignName,
+        campaignId: campaignId,
+        campaignName: campaignName,
         type: asset.type,
         url: asset.url,
-        localPath: asset.url,
         thumbnail: asset.thumbnail,
-        duration: asset.duration || 10,
+        duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
         size: asset.size,
       },
     });
