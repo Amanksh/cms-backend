@@ -42,6 +42,37 @@ export const config = {
 
   // API
   apiBaseUrl: process.env.API_BASE_URL || "http://localhost:5000",
+
+  // AWS S3 Configuration
+  aws: {
+    region: process.env.AWS_REGION || process.env.REGION || "ap-south-1",
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || process.env.KEY_ID || "",
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || process.env.ACCESS_KEY || "",
+    bucketName: process.env.AWS_BUCKET_NAME || "",
+  },
+
+  // File Upload Configuration
+  upload: {
+    maxFileSize: 500 * 1024 * 1024, // 500MB
+    allowedMimeTypes: [
+      // Images
+      "image/png",
+      "image/jpeg",
+      "image/jpg",
+      "image/gif",
+      "image/webp",
+      // Videos
+      "video/mp4",
+      "video/webm",
+      "video/quicktime",
+      "video/x-msvideo",
+      "video/x-matroska",
+      // HTML
+      "text/html",
+      "application/zip",
+    ],
+    allowedExtensions: [".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".webm", ".mov", ".avi", ".mkv", ".html", ".zip"],
+  },
 };
 
 // =============================================================================

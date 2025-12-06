@@ -1,302 +1,99 @@
-# CMS Backend API Documentation
+# CMS Backend API Documentation v2.0
 
-## 📋 Project Analysis Summary
+## Campaign-Based Content Management System
 
-**Project:** CMS Backend for Digital Signage (Orion-Connect)  
-**Framework:** Express.js + TypeScript  
-**Database:** MongoDB (Mongoose ODM)  
-**Email Service:** Resend
+This API provides endpoints for managing digital signage content through a **Campaign-based system**. The backend is synchronized with the CMS Frontend (Next.js dashboard).
+
+### Key Concepts
+
+- **Campaign**: A container for assets (images, videos, URLs). Users must create a Campaign before uploading any asset.
+- **Asset**: Media content (IMAGE, VIDEO, HTML, URL) that belongs to a Campaign.
+- **Playlist**: A collection of Campaigns (up to 7) that plays on digital signage displays.
+- **Display**: A digital signage device that can have a playlist assigned.
+
+### Validation Rules
+
+| Rule | Limit |
+|------|-------|
+| Max assets per Campaign | 9 |
+| Max Campaigns per Playlist | 7 |
+| Campaign name | Unique per user |
+| Asset upload | Requires Campaign ID |
+| Device ID | Unique globally |
 
 ---
 
-## 🌐 Base URLs
+## Base URL
 
-| Environment | Base URL |
-|-------------|----------|
-| **Development** | `http://localhost:5000` |
-| **Production (Render)** | `https://cms-backend-9r1u.onrender.com` |
-
-### For Flutter/Android App:
-```dart
-// Development
-const String BASE_URL = "http://10.0.2.2:5000";  // Android Emulator
-const String BASE_URL = "http://localhost:5000"; // iOS Simulator
-
-// Production (Render)
-const String BASE_URL = "https://cms-backend-9r1u.onrender.com";
+```
+Production: https://your-api-domain.com/api
+Development: http://localhost:5000/api
 ```
 
 ---
 
-## 🔌 API Endpoints
+## Campaigns API
 
-### Health & Info
+### Create Campaign
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Server health check |
-| GET | `/api` | API information & available endpoints |
+Creates a new Campaign. Campaign name must be unique per user.
 
-### Display Management
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/displays/playback` | Track display playback activity |
-| GET | `/api/displays/device/:deviceId` | Get display details with playlist |
-
-### Playback Logging (Proof-of-Play)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/playback/log` | Log single or bulk playback events |
-| GET | `/api/playback/report` | Get aggregated playback reports |
-| GET | `/api/playback/stats` | Get quick overall statistics |
-
-### Assets
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/assets` | List all assets with pagination |
-| GET | `/api/assets/:id` | Get single asset by ID |
-| GET | `/api/assets/:id/download` | Download/redirect to asset URL |
-| GET | `/api/assets/by-name/:name` | Get asset by name |
-| POST | `/api/assets` | Create new asset |
-| PUT | `/api/assets/:id` | Update asset |
-| DELETE | `/api/assets/:id` | Delete asset |
-| GET | `/api/assets/stats/summary` | Get asset statistics |
-
-### Email
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/email/quote-request` | Submit quote request |
-| POST | `/api/email/quota` | (Deprecated) Alias for quote-request |
-
----
-
-## 📝 Detailed Endpoint Documentation
-
-### 1. Health Check
-```http
-GET /health
-```
-
-**Response:**
-```json
-{
-  "status": "ok",
-  "timestamp": "2025-11-28T12:00:00.000Z",
-  "environment": "development",
-  "uptime": 3600.5
-}
-```
-
----
-
-### 2. Track Display Playback
-```http
-POST /api/displays/playback
-Content-Type: application/json
-```
+**Endpoint:** `POST /api/campaigns`
 
 **Request Body:**
 ```json
 {
-  "deviceId": "PLAYER_01"
+  "name": "Summer Sale 2024",
+  "description": "Promotional content for summer sale",
+  "userId": "user123"
 }
-```
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "message": "Playback tracked successfully",
-  "lastActive": "2025-11-28T12:00:00.000Z",
-  "totalHours": 120
-}
-```
-
----
-
-### 3. Get Display by Device ID
-```http
-GET /api/displays/device/:deviceId
-```
-
-**Response (200):**
-```json
-{
-  "displayId": "507f1f77bcf86cd799439011",
-  "name": "Lobby Display",
-  "resolution": "1920x1080",
-  "playlist": {
-    "_id": "507f1f77bcf86cd799439012",
-    "name": "Main Playlist",
-    "description": "Default lobby content",
-    "status": "active",
-    "items": [
-      {
-        "assetId": {
-          "_id": "507f1f77bcf86cd799439013",
-          "name": "Welcome Video",
-          "type": "VIDEO",
-          "url": "https://cdn.example.com/video.mp4",
-          "thumbnail": "https://cdn.example.com/thumb.jpg",
-          "duration": 30,
-          "size": 15000000
-        },
-        "duration": 30,
-        "order": 1
-      }
-    ],
-    "schedule": {}
-  }
-}
-```
-
----
-
-### 4. Log Playback Events
-```http
-POST /api/playback/log
-Content-Type: application/json
-```
-
-**Request Body (Single):**
-```json
-{
-  "device_id": "PLAYER_01",
-  "asset_id": "video1.mp4",
-  "playlist_id": "PL05",
-  "start_time": "2025-11-28T10:00:00Z",
-  "end_time": "2025-11-28T10:00:30Z",
-  "duration": 30
-}
-```
-
-**Request Body (Bulk):**
-```json
-[
-  {
-    "device_id": "PLAYER_01",
-    "asset_id": "video1.mp4",
-    "start_time": "2025-11-28T10:00:00Z",
-    "end_time": "2025-11-28T10:00:30Z",
-    "duration": 30
-  },
-  {
-    "device_id": "PLAYER_02",
-    "asset_id": "image1.jpg",
-    "start_time": "2025-11-28T10:00:30Z",
-    "end_time": "2025-11-28T10:00:45Z",
-    "duration": 15
-  }
-]
 ```
 
 **Response (201):**
 ```json
 {
   "success": true,
-  "count": 2,
-  "message": "Successfully logged 2 playback event(s)"
-}
-```
-
----
-
-### 5. Get Playback Report
-```http
-GET /api/playback/report?device_id=PLAYER_01&date_from=2025-11-01T00:00:00Z&date_to=2025-11-30T23:59:59Z&page=1&limit=50
-```
-
-**Query Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| device_id | string | No | Filter by device |
-| asset_id | string | No | Filter by asset |
-| playlist_id | string | No | Filter by playlist |
-| date_from | ISO date | No | Start date |
-| date_to | ISO date | No | End date |
-| page | number | No | Page number (default: 1) |
-| limit | number | No | Results per page (default: 50, max: 1000) |
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "summary": [
-    {
-      "asset_id": "video1.mp4",
-      "play_count": 32,
-      "total_duration": 850,
-      "first_played": "2025-11-01T08:00:00.000Z",
-      "last_played": "2025-11-28T18:30:00.000Z",
-      "unique_device_count": 5
-    }
-  ],
-  "pagination": {
-    "page": 1,
-    "limit": 50,
-    "total": 10,
-    "totalPages": 1,
-    "hasNextPage": false,
-    "hasPrevPage": false
-  },
-  "filters": {
-    "device_id": "PLAYER_01",
-    "asset_id": null,
-    "playlist_id": null,
-    "date_from": "2025-11-01T00:00:00Z",
-    "date_to": "2025-11-30T23:59:59Z"
+  "message": "Campaign created successfully",
+  "data": {
+    "_id": "507f1f77bcf86cd799439011",
+    "name": "Summer Sale 2024",
+    "description": "Promotional content for summer sale",
+    "userId": "user123",
+    "createdAt": "2024-01-15T10:00:00.000Z",
+    "updatedAt": "2024-01-15T10:00:00.000Z",
+    "assetCount": 0,
+    "maxAssets": 9,
+    "previewAssets": [],
+    "canAddMoreAssets": true
   }
 }
 ```
 
----
-
-### 6. Get Playback Stats
-```http
-GET /api/playback/stats?date_from=2025-11-01T00:00:00Z&date_to=2025-11-30T23:59:59Z
-```
-
-**Response (200):**
+**Error (409 - Duplicate Name):**
 ```json
 {
-  "success": true,
-  "stats": {
-    "total_plays": 1250,
-    "total_duration": 45000,
-    "unique_asset_count": 25,
-    "unique_device_count": 10,
-    "unique_playlist_count": 5,
-    "earliest_play": "2025-11-01T08:00:00.000Z",
-    "latest_play": "2025-11-28T18:30:00.000Z"
-  },
-  "filters": {
-    "date_from": "2025-11-01T00:00:00Z",
-    "date_to": "2025-11-30T23:59:59Z"
-  }
+  "success": false,
+  "message": "A campaign with this name already exists"
 }
 ```
 
 ---
 
-### 7. List Assets
-```http
-GET /api/assets?type=VIDEO&page=1&limit=20&search=promo
-```
+### List Campaigns
+
+Returns all campaigns with asset counts and preview thumbnails.
+
+**Endpoint:** `GET /api/campaigns`
 
 **Query Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| type | string | No | Filter by type (IMAGE, VIDEO, HTML, URL) |
-| userId | string | No | Filter by user ID |
-| search | string | No | Search by name |
-| page | number | No | Page number (default: 1) |
-| limit | number | No | Results per page (default: 20, max: 100) |
-| sortBy | string | No | Sort field (default: createdAt) |
-| sortOrder | string | No | asc or desc (default: desc) |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| userId | string | - | Filter by user ID (recommended) |
+| search | string | - | Search by name |
+| page | number | 1 | Page number |
+| limit | number | 20 | Results per page (max 100) |
+| sortBy | string | createdAt | Sort field |
+| sortOrder | string | desc | asc or desc |
 
 **Response (200):**
 ```json
@@ -304,106 +101,139 @@ GET /api/assets?type=VIDEO&page=1&limit=20&search=promo
   "success": true,
   "data": [
     {
-      "_id": "507f1f77bcf86cd799439013",
-      "name": "Welcome Video",
-      "type": "VIDEO",
-      "url": "https://cdn.example.com/video.mp4",
-      "thumbnail": "https://cdn.example.com/thumb.jpg",
-      "duration": 30,
-      "size": 15000000,
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "Summer Sale 2024",
+      "description": "Promotional content",
       "userId": "user123",
-      "createdAt": "2025-11-28T10:00:00.000Z",
-      "updatedAt": "2025-11-28T10:00:00.000Z"
+      "assetCount": 5,
+      "maxAssets": 9,
+      "canAddMoreAssets": true,
+      "previewAssets": [
+        {
+          "_id": "asset123",
+          "name": "Banner 1",
+          "type": "IMAGE",
+          "thumbnail": "https://...",
+          "url": "https://..."
+        }
+      ],
+      "createdAt": "2024-01-15T10:00:00.000Z"
     }
   ],
   "pagination": {
     "page": 1,
     "limit": 20,
-    "total": 50,
-    "totalPages": 3,
-    "hasNextPage": true,
+    "total": 5,
+    "totalPages": 1,
+    "hasNextPage": false,
     "hasPrevPage": false
+  },
+  "filters": {
+    "userId": "user123",
+    "search": null
   }
 }
 ```
 
 ---
 
-### 8. Get Asset by ID
-```http
-GET /api/assets/:id
-```
+### Get Campaign Details
+
+Returns a single campaign with all its assets.
+
+**Endpoint:** `GET /api/campaigns/:id`
 
 **Response (200):**
 ```json
 {
   "success": true,
   "data": {
-    "_id": "507f1f77bcf86cd799439013",
-    "name": "Welcome Video",
-    "type": "VIDEO",
-    "url": "https://cdn.example.com/video.mp4",
-    "thumbnail": "https://cdn.example.com/thumb.jpg",
-    "duration": 30,
-    "size": 15000000,
-    "userId": "user123"
+    "_id": "507f1f77bcf86cd799439011",
+    "name": "Summer Sale 2024",
+    "description": "Promotional content",
+    "userId": "user123",
+    "assetCount": 5,
+    "maxAssets": 9,
+    "canAddMoreAssets": true,
+    "assets": [
+      {
+        "_id": "asset123",
+        "name": "Banner 1",
+        "type": "IMAGE",
+        "url": "https://...",
+        "duration": 10,
+        "size": 1024000
+      }
+    ],
+    "createdAt": "2024-01-15T10:00:00.000Z"
   }
 }
 ```
 
 ---
 
-### 9. Download Asset
-```http
-GET /api/assets/:id/download
-GET /api/assets/:id/download?redirect=false
-```
+### Update Campaign
 
-**With redirect=true (default):** Redirects to asset URL  
-**With redirect=false:** Returns JSON with download URL
-
-**Response (redirect=false):**
-```json
-{
-  "success": true,
-  "data": {
-    "id": "507f1f77bcf86cd799439013",
-    "name": "Welcome Video",
-    "type": "VIDEO",
-    "url": "https://cdn.example.com/video.mp4",
-    "size": 15000000,
-    "downloadUrl": "https://cdn.example.com/video.mp4"
-  }
-}
-```
-
----
-
-### 10. Get Asset by Name
-```http
-GET /api/assets/by-name/:name
-```
-
-**Example:** `GET /api/assets/by-name/welcome-video.mp4`
-
----
-
-### 11. Create Asset
-```http
-POST /api/assets
-Content-Type: application/json
-```
+**Endpoint:** `PUT /api/campaigns/:id`
 
 **Request Body:**
 ```json
 {
-  "name": "Promo Video",
-  "type": "VIDEO",
-  "url": "https://cdn.example.com/promo.mp4",
-  "thumbnail": "https://cdn.example.com/promo-thumb.jpg",
-  "duration": 45,
-  "size": 25000000,
-  "userId": "user123"
+  "name": "Updated Campaign Name",
+  "description": "Updated description"
+}
+```
+
+---
+
+### Delete Campaign
+
+Deletes a campaign and all its assets. Cannot delete if campaign is assigned to any playlist.
+
+**Endpoint:** `DELETE /api/campaigns/:id`
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Campaign deleted successfully",
+  "data": {
+    "id": "507f1f77bcf86cd799439011",
+    "name": "Summer Sale 2024",
+    "deletedAssetsCount": 5
+  }
+}
+```
+
+**Error (400 - Assigned to Playlist):**
+```json
+{
+  "success": false,
+  "message": "Cannot delete campaign. It is currently assigned to a playlist. Remove it from the playlist first."
+}
+```
+
+---
+
+## Assets API
+
+### Create Asset (Requires Campaign)
+
+Creates a new asset. **Campaign ID is required.**
+
+**Endpoint:** `POST /api/assets`
+
+**Request Body:**
+```json
+{
+  "name": "Hero Banner",
+  "type": "IMAGE",
+  "url": "https://storage.example.com/banner.jpg",
+  "thumbnail": "https://storage.example.com/banner-thumb.jpg",
+  "duration": 10,
+  "size": 1024000,
+  "userId": "user123",
+  "campaignId": "507f1f77bcf86cd799439011"
 }
 ```
 
@@ -413,192 +243,356 @@ Content-Type: application/json
   "success": true,
   "message": "Asset created successfully",
   "data": {
-    "_id": "507f1f77bcf86cd799439014",
-    "name": "Promo Video",
-    "type": "VIDEO",
-    "url": "https://cdn.example.com/promo.mp4",
-    ...
+    "_id": "asset123",
+    "name": "Hero Banner",
+    "type": "IMAGE",
+    "url": "https://...",
+    "campaignId": {
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "Summer Sale 2024"
+    }
+  },
+  "campaignInfo": {
+    "campaignId": "507f1f77bcf86cd799439011",
+    "campaignName": "Summer Sale 2024",
+    "assetCount": 3,
+    "maxAssets": 9,
+    "remainingSlots": 6
+  }
+}
+```
+
+**Error (400 - No Campaign):**
+```json
+{
+  "success": false,
+  "message": "Please create a Campaign first."
+}
+```
+
+**Error (400 - Campaign Full):**
+```json
+{
+  "success": false,
+  "message": "Maximum 9 assets allowed in one Campaign.",
+  "currentCount": 9,
+  "maxAllowed": 9
+}
+```
+
+---
+
+### List Assets
+
+**Endpoint:** `GET /api/assets`
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| type | string | Filter by type (IMAGE, VIDEO, HTML, URL) |
+| userId | string | Filter by user |
+| campaignId | string | Filter by campaign |
+| search | string | Search by name |
+| page | number | Page number |
+| limit | number | Results per page |
+
+---
+
+### Get Asset
+
+**Endpoint:** `GET /api/assets/:id`
+
+---
+
+### Update Asset
+
+**Endpoint:** `PUT /api/assets/:id`
+
+Note: When changing `campaignId`, the target campaign's asset limit is validated.
+
+---
+
+### Delete Asset
+
+**Endpoint:** `DELETE /api/assets/:id`
+
+---
+
+## Playlists API
+
+### Create Playlist
+
+Creates a playlist with selected campaigns (max 7).
+
+**Endpoint:** `POST /api/playlists`
+
+**Request Body:**
+```json
+{
+  "name": "Lobby Display",
+  "description": "Content for main lobby screen",
+  "userId": "user123",
+  "status": "active",
+  "campaignIds": [
+    "507f1f77bcf86cd799439011",
+    "507f1f77bcf86cd799439012"
+  ],
+  "schedule": {
+    "startDate": "2024-01-15",
+    "endDate": "2024-02-15",
+    "daysOfWeek": [1, 2, 3, 4, 5],
+    "startTime": "09:00",
+    "endTime": "18:00"
+  }
+}
+```
+
+**Error (400 - Too Many Campaigns):**
+```json
+{
+  "success": false,
+  "message": "Maximum 7 campaigns allowed in one playlist.",
+  "provided": 8,
+  "maxAllowed": 7
+}
+```
+
+---
+
+### List Playlists
+
+**Endpoint:** `GET /api/playlists`
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| userId | string | Filter by user |
+| status | string | Filter by status |
+| search | string | Search by name |
+
+Returns playlists with campaign summaries and total asset counts.
+
+---
+
+### Get Playlist Details
+
+Returns playlist with all campaigns and their assets expanded.
+
+**Endpoint:** `GET /api/playlists/:id`
+
+---
+
+### Update Playlist
+
+**Endpoint:** `PUT /api/playlists/:id`
+
+---
+
+### Delete Playlist
+
+**Endpoint:** `DELETE /api/playlists/:id`
+
+---
+
+### Add Campaign to Playlist
+
+**Endpoint:** `POST /api/playlists/:id/campaigns`
+
+**Request Body:**
+```json
+{
+  "campaignId": "507f1f77bcf86cd799439011"
+}
+```
+
+---
+
+### Remove Campaign from Playlist
+
+**Endpoint:** `DELETE /api/playlists/:id/campaigns/:campaignId`
+
+---
+
+## Player API (For Android/Digital Signage)
+
+These endpoints are designed for player devices to fetch content.
+
+### Get Playlist for Player
+
+Returns fully expanded playlist with all assets in playback order.
+
+**Endpoint:** `GET /api/player/playlist`
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| playlistId | string | Playlist ID |
+| deviceId | string | Device ID (alternative to playlistId) |
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "playlistId": "playlist123",
+    "playlistName": "Lobby Display",
+    "status": "active",
+    "totalAssets": 15,
+    "totalDuration": 180,
+    "assets": [
+      {
+        "assetId": "asset123",
+        "name": "Summer Banner",
+        "campaignId": "campaign1",
+        "campaignName": "Summer Sale 2024",
+        "type": "IMAGE",
+        "url": "https://storage.example.com/banner.jpg",
+        "localPath": "https://storage.example.com/banner.jpg",
+        "thumbnail": "https://...",
+        "duration": 10,
+        "size": 1024000,
+        "order": 0
+      }
+    ],
+    "campaigns": [
+      {
+        "id": "campaign1",
+        "name": "Summer Sale 2024",
+        "assetCount": 5
+      }
+    ],
+    "schedule": {
+      "startDate": "2024-01-15T00:00:00.000Z",
+      "endDate": "2024-02-15T00:00:00.000Z",
+      "daysOfWeek": [1, 2, 3, 4, 5],
+      "startTime": "09:00",
+      "endTime": "18:00"
+    },
+    "updatedAt": "2024-01-15T12:00:00.000Z"
   }
 }
 ```
 
 ---
 
-### 12. Update Asset
-```http
-PUT /api/assets/:id
-Content-Type: application/json
-```
+### Get Playlist by ID (Alternative)
 
-**Request Body:**
+**Endpoint:** `GET /api/player/playlist/:id`
+
+---
+
+### List All Campaigns (For Player Caching)
+
+**Endpoint:** `GET /api/player/campaigns`
+
+---
+
+### Get Asset Details (For Player)
+
+**Endpoint:** `GET /api/player/asset/:id`
+
+---
+
+## Playback Logging API
+
+### Log Playback Event
+
+**Endpoint:** `POST /api/playback/log`
+
+**Request Body (Single):**
 ```json
 {
-  "name": "Updated Video Name",
-  "duration": 60
+  "device_id": "PLAYER_01",
+  "asset_id": "asset123",
+  "playlist_id": "playlist123",
+  "start_time": "2024-01-15T10:00:00Z",
+  "end_time": "2024-01-15T10:00:30Z",
+  "duration": 30
 }
 ```
 
----
-
-### 13. Delete Asset
-```http
-DELETE /api/assets/:id
-```
-
-**Response (200):**
+**Request Body (Bulk):**
 ```json
-{
-  "success": true,
-  "message": "Asset deleted successfully",
-  "data": { "id": "507f1f77bcf86cd799439013" }
-}
+[
+  { "device_id": "PLAYER_01", "asset_id": "asset1", ... },
+  { "device_id": "PLAYER_01", "asset_id": "asset2", ... }
+]
 ```
 
 ---
 
-### 14. Asset Statistics
-```http
-GET /api/assets/stats/summary
-```
+### Get Playback Report
 
-**Response (200):**
-```json
-{
-  "success": true,
-  "stats": {
-    "totalAssets": 150,
-    "totalSize": 5368709120,
-    "totalSizeMB": 5120
-  },
-  "byType": [
-    { "type": "VIDEO", "count": 80, "totalSize": 4294967296, "totalSizeMB": 4096 },
-    { "type": "IMAGE", "count": 50, "totalSize": 524288000, "totalSizeMB": 500 },
-    { "type": "HTML", "count": 20, "totalSize": 549453824, "totalSizeMB": 524 }
-  ]
-}
-```
+**Endpoint:** `GET /api/playback/report`
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| device_id | string | Filter by device |
+| asset_id | string | Filter by asset |
+| playlist_id | string | Filter by playlist |
+| date_from | string | Start date (ISO) |
+| date_to | string | End date (ISO) |
+| page | number | Page number |
+| limit | number | Results per page |
 
 ---
 
-### 15. Submit Quote Request
-```http
-POST /api/email/quote-request
-Content-Type: application/json
-```
+### Get Playback Stats
 
-**Request Body:**
-```json
-{
-  "product": {
-    "id": "PROD001",
-    "name": "LED Display Panel",
-    "category": "Indoor",
-    "pixelPitch": 2.5,
-    "resolution": { "width": 1920, "height": 1080 },
-    "cabinetDimensions": { "width": 500, "height": 500 },
-    "moduleDimensions": { "width": 250, "height": 250 },
-    "moduleResolution": { "width": 128, "height": 128 },
-    "moduleQuantity": 4,
-    "pixelDensity": 160,
-    "brightness": 1000,
-    "refreshRate": 3840,
-    "environment": "Indoor",
-    "maxPowerConsumption": 450,
-    "avgPowerConsumption": 150,
-    "weightPerCabinet": 8.5,
-    "userType": "endUser"
-  },
-  "customerName": "John Doe",
-  "customerEmail": "john@example.com",
-  "customerPhone": "+91-9876543210",
-  "message": "I need a quote for 10 panels.",
-  "cabinetGrid": { "columns": 5, "rows": 2 },
-  "displaySize": { "width": 2.5, "height": 1.0 },
-  "aspectRatio": "16:9"
-}
-```
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "message": "Quote request submitted successfully",
-  "data": { "id": "email_id_from_resend" }
-}
-```
+**Endpoint:** `GET /api/playback/stats`
 
 ---
 
-## ⚙️ Required Environment Variables
+## Displays API
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `NODE_ENV` | No | `development` | Environment mode |
-| `PORT` | No | `5000` | Server port |
-| `MONGODB_URI` | **Yes** | `mongodb://localhost:27017/cms` | MongoDB connection string |
-| `RESEND_API_KEY` | **Production** | - | Resend API key for emails |
-| `TO_EMAIL` | **Production** | - | Quote request recipient |
-| `DEFAULT_FROM_EMAIL` | No | `Orion-Connect <no-reply@orionconnect.in>` | Sender email |
-| `CORS_ORIGINS` | No | `localhost:3000,5173,8080` | Allowed CORS origins |
-| `RATE_LIMIT_WINDOW_MS` | No | `900000` | Rate limit window (15 min) |
-| `RATE_LIMIT_MAX_REQUESTS` | No | `100` | Max requests per window |
-| `API_BASE_URL` | No | `http://localhost:5000` | API base URL |
+### List Displays
+
+**Endpoint:** `GET /api/displays`
 
 ---
 
-## 🔒 Security Features
+### Create Display
 
-✅ **Helmet** - Security HTTP headers  
-✅ **CORS** - Configurable cross-origin resource sharing  
-✅ **Rate Limiting** - 100 requests per 15 minutes per IP  
-✅ **Input Validation** - Request body validation  
-✅ **Error Handling** - Global error handler with sanitized responses  
-✅ **Graceful Shutdown** - Clean server shutdown on SIGTERM/SIGINT  
+**Endpoint:** `POST /api/displays`
 
 ---
 
-## 🚀 Deployment Checklist
+### Get Display
 
-1. [ ] Set `NODE_ENV=production`
-2. [ ] Configure production `MONGODB_URI` (MongoDB Atlas recommended)
-3. [ ] Set `RESEND_API_KEY` and `TO_EMAIL`
-4. [ ] Configure `CORS_ORIGINS` with production domains
-5. [ ] Set `API_BASE_URL` to production URL
-6. [ ] Reduce `RATE_LIMIT_MAX_REQUESTS` for stricter limits
-7. [ ] Use process manager (PM2) or containerization (Docker)
-8. [ ] Set up reverse proxy (nginx) for SSL termination
-9. [ ] Enable MongoDB Atlas IP whitelist or VPC peering
-10. [ ] Set up monitoring and logging (e.g., PM2, Datadog, New Relic)
+**Endpoint:** `GET /api/displays/:id`
 
 ---
 
-## 📁 Project Structure
+### Update Display
 
-```
-cms-backend/
-├── src/
-│   ├── config/
-│   │   └── index.ts          # Centralized configuration
-│   ├── controllers/
-│   │   ├── display.controller.ts
-│   │   └── emailController.ts
-│   ├── middleware/
-│   │   └── errorHandler.ts   # Global error handling
-│   ├── models/
-│   │   ├── Asset.ts
-│   │   ├── Display.ts
-│   │   ├── PlaybackLog.ts
-│   │   └── Playlist.ts
-│   ├── routes/
-│   │   ├── display.routes.ts
-│   │   ├── email.routes.ts
-│   │   └── playbackLogs.ts
-│   └── index.ts              # Main entry point
-├── postman/
-│   └── Playback-Logs-API.postman_collection.json
-├── .env.example              # Environment template
-├── .env.production           # Production template
-├── package.json
-├── tsconfig.json
-└── README.md
-```
+**Endpoint:** `PATCH /api/displays/:id`
+
+---
+
+### Delete Display
+
+**Endpoint:** `DELETE /api/displays/:id`
+
+---
+
+## Error Codes
+
+| Code | Description |
+|------|-------------|
+| 400 | Bad Request - Invalid input or validation error |
+| 401 | Unauthorized - Missing or invalid authentication |
+| 404 | Not Found - Resource not found |
+| 409 | Conflict - Duplicate name or constraint violation |
+| 500 | Internal Server Error |
+
+---
+
+## Frontend Synchronization
+
+This backend is synchronized with the CMS Frontend (Next.js). Both systems:
+- Connect to the same MongoDB database
+- Use identical model structures
+- Share validation rules
+
+See `docs/FRONTEND_BACKEND_SYNC.md` for detailed synchronization information.

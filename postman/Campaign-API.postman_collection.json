@@ -1,0 +1,551 @@
+{
+  "info": {
+    "_postman_id": "campaign-api-collection",
+    "name": "CMS Campaign API v2.0",
+    "description": "Campaign-based Content Management System API.\n\nThis collection contains endpoints for:\n- Campaign management (create, list, delete)\n- Asset management (with campaign requirement)\n- Playlist management (with campaign selection)\n- Player API (for Android/digital signage)\n\n## Key Concepts\n- **Campaign**: Container for assets (max 9 assets per campaign)\n- **Playlist**: Collection of campaigns (max 7 campaigns per playlist)\n- Assets MUST belong to a campaign\n\n## Base URL\n`{{baseUrl}}` - Default: http://localhost:5000",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "campaignId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "assetId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "playlistId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Campaigns",
+      "description": "Campaign management endpoints",
+      "item": [
+        {
+          "name": "Create Campaign",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data._id) {",
+                  "    pm.collectionVariables.set('campaignId', jsonData.data._id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Summer Sale 2024\",\n  \"description\": \"Promotional content for summer sale campaign\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns"]
+            },
+            "description": "Create a new campaign. Campaign name must be unique.\n\n**Required:**\n- name (string)\n\n**Optional:**\n- description (string)"
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"success\": true,\n  \"message\": \"Campaign created successfully\",\n  \"data\": {\n    \"_id\": \"507f1f77bcf86cd799439011\",\n    \"name\": \"Summer Sale 2024\",\n    \"description\": \"Promotional content for summer sale campaign\",\n    \"assetCount\": 0,\n    \"maxAssets\": 9,\n    \"canAddMoreAssets\": true\n  }\n}"
+            },
+            {
+              "name": "Duplicate Name Error",
+              "status": "Conflict",
+              "code": 409,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Campaign name must be unique. A campaign with this name already exists.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "List Campaigns",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns"]
+            },
+            "description": "List all campaigns with asset counts and preview thumbnails.\n\n**Query Parameters:**\n- search: Search by name\n- page: Page number (default: 1)\n- limit: Results per page (default: 20)\n- sortBy: Sort field (default: createdAt)\n- sortOrder: asc or desc (default: desc)"
+          }
+        },
+        {
+          "name": "List Campaigns with Search",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns?search=summer&page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns"],
+              "query": [
+                { "key": "search", "value": "summer" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Campaign by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}"]
+            },
+            "description": "Get a single campaign with all its assets."
+          }
+        },
+        {
+          "name": "Get Campaign Assets",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}/assets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}", "assets"]
+            },
+            "description": "Get all assets belonging to a specific campaign."
+          }
+        },
+        {
+          "name": "Update Campaign",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Campaign Name\",\n  \"description\": \"Updated description\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Campaign",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}"]
+            },
+            "description": "Delete a campaign and all its assets.\n\n**Note:** Cannot delete if campaign is assigned to any playlist."
+          },
+          "response": [
+            {
+              "name": "Cannot Delete - In Playlist",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Cannot delete campaign. It is assigned to one or more playlists. Please remove it from all playlists first.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Assets",
+      "description": "Asset management endpoints (requires campaignId)",
+      "item": [
+        {
+          "name": "Create Asset (with Campaign)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data._id) {",
+                  "    pm.collectionVariables.set('assetId', jsonData.data._id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Hero Banner\",\n  \"type\": \"IMAGE\",\n  \"url\": \"https://storage.example.com/banner.jpg\",\n  \"thumbnail\": \"https://storage.example.com/banner-thumb.jpg\",\n  \"duration\": 10,\n  \"size\": 1024000,\n  \"userId\": \"user123\",\n  \"campaignId\": \"{{campaignId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/assets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "assets"]
+            },
+            "description": "Create a new asset. **campaignId is required.**\n\n**Required Fields:**\n- name, type, url, size, userId, campaignId\n\n**Valid Types:**\n- IMAGE, VIDEO, HTML, URL\n\n**Limits:**\n- Max 9 assets per campaign"
+          },
+          "response": [
+            {
+              "name": "No Campaign Error",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Please create a Campaign first.\"\n}"
+            },
+            {
+              "name": "Campaign Full Error",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Maximum 9 assets allowed in one Campaign.\",\n  \"currentCount\": 9,\n  \"maxAllowed\": 9\n}"
+            }
+          ]
+        },
+        {
+          "name": "List Assets",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/assets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "assets"]
+            },
+            "description": "List all assets with pagination.\n\n**Query Parameters:**\n- type: IMAGE, VIDEO, HTML, URL\n- userId: Filter by user\n- campaignId: Filter by campaign\n- search: Search by name\n- page, limit, sortBy, sortOrder"
+          }
+        },
+        {
+          "name": "List Assets by Campaign",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/assets?campaignId={{campaignId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "assets"],
+              "query": [
+                { "key": "campaignId", "value": "{{campaignId}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Asset by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/assets/{{assetId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "assets", "{{assetId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Asset",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Asset Name\",\n  \"duration\": 15\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/assets/{{assetId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "assets", "{{assetId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Asset",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/assets/{{assetId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "assets", "{{assetId}}"]
+            }
+          }
+        },
+        {
+          "name": "Asset Statistics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/assets/stats/summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "assets", "stats", "summary"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Playlists",
+      "description": "Playlist management with campaigns",
+      "item": [
+        {
+          "name": "Create Playlist with Campaigns",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data._id) {",
+                  "    pm.collectionVariables.set('playlistId', jsonData.data._id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Lobby Display\",\n  \"description\": \"Content for main lobby\",\n  \"userId\": \"user123\",\n  \"status\": \"active\",\n  \"campaignIds\": [\"{{campaignId}}\"],\n  \"schedule\": {\n    \"startDate\": \"2024-01-15\",\n    \"endDate\": \"2024-12-31\",\n    \"daysOfWeek\": [1, 2, 3, 4, 5],\n    \"startTime\": \"09:00\",\n    \"endTime\": \"18:00\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/playlists",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playlists"]
+            },
+            "description": "Create a playlist with selected campaigns.\n\n**Limit:** Max 7 campaigns per playlist"
+          },
+          "response": [
+            {
+              "name": "Too Many Campaigns Error",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{\n  \"success\": false,\n  \"message\": \"Maximum 7 campaigns allowed in one playlist.\",\n  \"provided\": 8,\n  \"maxAllowed\": 7\n}"
+            }
+          ]
+        },
+        {
+          "name": "List Playlists",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/playlists",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playlists"]
+            }
+          }
+        },
+        {
+          "name": "Get Playlist with Campaigns",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/playlists/{{playlistId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playlists", "{{playlistId}}"]
+            },
+            "description": "Get playlist with all campaigns and their assets expanded."
+          }
+        },
+        {
+          "name": "Update Playlist",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Playlist Name\",\n  \"status\": \"active\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/playlists/{{playlistId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playlists", "{{playlistId}}"]
+            }
+          }
+        },
+        {
+          "name": "Add Campaign to Playlist",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"campaignId\": \"{{campaignId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/playlists/{{playlistId}}/campaigns",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playlists", "{{playlistId}}", "campaigns"]
+            }
+          }
+        },
+        {
+          "name": "Remove Campaign from Playlist",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/playlists/{{playlistId}}/campaigns/{{campaignId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playlists", "{{playlistId}}", "campaigns", "{{campaignId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Playlist",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/playlists/{{playlistId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "playlists", "{{playlistId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Player API",
+      "description": "Endpoints for Android/Digital Signage players",
+      "item": [
+        {
+          "name": "Get Playlist for Player",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/player/playlist?playlistId={{playlistId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "player", "playlist"],
+              "query": [
+                { "key": "playlistId", "value": "{{playlistId}}" }
+              ]
+            },
+            "description": "Get fully expanded playlist with all assets in playback order.\n\n**Query Parameters:**\n- playlistId: Playlist ID\n- deviceId: Device ID (alternative to playlistId)"
+          }
+        },
+        {
+          "name": "Get Playlist by Device ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/player/playlist?deviceId=PLAYER_01",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "player", "playlist"],
+              "query": [
+                { "key": "deviceId", "value": "PLAYER_01" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Playlist by ID (Direct)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/player/playlist/{{playlistId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "player", "playlist", "{{playlistId}}"]
+            }
+          }
+        },
+        {
+          "name": "List All Campaigns (for Caching)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/player/campaigns",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "player", "campaigns"]
+            },
+            "description": "Get all campaigns with assets for player caching."
+          }
+        },
+        {
+          "name": "Get Asset Details",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/player/asset/{{assetId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "player", "asset", "{{assetId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "API Info",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api",
+              "host": ["{{baseUrl}}"],
+              "path": ["api"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+
