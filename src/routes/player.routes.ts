@@ -18,15 +18,18 @@ import mongoose from "mongoose";
  *   "assets": [
  *     {
  *       "assetId": "...",
- *       "type": "VIDEO",
+ *       "type": "video",
  *       "url": "...",
  *       "duration": 10
  *     }
  *   ]
  * }
  * 
- * NOTE: Assets are FLATTENED - no nested campaign structures.
- * All assets (from campaigns and direct assets) are in one unified array.
+ * NOTE: 
+ * - Assets are FLATTENED - no nested campaign structures
+ * - All assets (from campaigns and direct assets) are in one unified array
+ * - Type is lowercase: "image" or "video" (not "IMAGE" or "VIDEO")
+ * - Every asset MUST have: assetId, type, url, duration
  * 
  * Supports:
  * - Campaigns (folders) containing multiple assets (max 8-9 per campaign)
@@ -43,16 +46,13 @@ const router = Router();
 
 interface FlattenedAsset {
   assetId: string;
-  type: "IMAGE" | "VIDEO" | "HTML" | "URL";
+  type: "image" | "video";
   url: string;
   duration: number;
 }
 
 interface PlayerPlaylistResponse {
   playlistId: string;
-  playlistName?: string;
-  status?: string;
-  totalAssets: number;
   assets: FlattenedAsset[];
 }
 
@@ -71,10 +71,19 @@ interface PlayerPlaylistResponse {
  *   - playlistId: The playlist ID to fetch
  *   - deviceId: Optional device ID for device-specific playlist
  * 
- * Response: Flattened array of assets with:
- *   - assetId, type, url, duration
+ * Response Format:
+ * {
+ *   "playlistId": "...",
+ *   "assets": [
+ *     { "assetId": "...", "type": "image", "url": "...", "duration": 10 },
+ *     { "assetId": "...", "type": "video", "url": "...", "duration": 30 }
+ *   ]
+ * }
  * 
- * NOTE: Does NOT return campaignIds or nested structures - returns FLATTENED assets array only
+ * NOTE: 
+ * - Does NOT return campaignIds or nested structures
+ * - Type is lowercase: "image" or "video"
+ * - All assets validated to have required fields
  */
 router.get("/playlist", async (req: Request, res: Response) => {
   try {
@@ -119,12 +128,43 @@ router.get("/playlist", async (req: Request, res: Response) => {
     if (playlist.status === "inactive") {
       return res.status(200).json({
         playlistId: playlist._id.toString(),
-        playlistName: playlist.name,
-        status: playlist.status,
-        totalAssets: 0,
         assets: [],
       });
     }
+
+    // Helper function to convert type to lowercase and validate asset
+    const formatAsset = (asset: any, durationOverride?: number): FlattenedAsset | null => {
+      // Validate required fields
+      if (!asset._id || !asset.type || !asset.url) {
+        console.warn(`Skipping asset with missing required fields: ${asset._id}`);
+        return null;
+      }
+
+      // Convert type to lowercase
+      const typeLower = asset.type.toLowerCase();
+      
+      // Android Player only supports "image" or "video" - filter out others
+      if (typeLower !== "image" && typeLower !== "video") {
+        console.warn(`Skipping asset with unsupported type: ${asset.type} (only image/video supported)`);
+        return null;
+      }
+
+      // Calculate duration
+      const duration = durationOverride ?? asset.duration ?? (asset.type === "VIDEO" ? 0 : 10);
+
+      // Ensure URL is valid (should be full CDN URL)
+      if (!asset.url || asset.url.trim() === "") {
+        console.warn(`Skipping asset with empty URL: ${asset._id}`);
+        return null;
+      }
+
+      return {
+        assetId: asset._id.toString(),
+        type: typeLower as "image" | "video",
+        url: asset.url.trim(),
+        duration: Math.max(0, duration), // Ensure non-negative duration
+      };
+    };
 
     // Build flattened assets array
     const flattenedAssets: FlattenedAsset[] = [];
@@ -140,12 +180,10 @@ router.get("/playlist", async (req: Request, res: Response) => {
 
         // Add each asset (flattened, no campaign reference)
         for (const asset of campaignAssets) {
-          flattenedAssets.push({
-            assetId: asset._id.toString(),
-            type: asset.type,
-            url: asset.url,
-            duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
-          });
+          const formattedAsset = formatAsset(asset);
+          if (formattedAsset) {
+            flattenedAssets.push(formattedAsset);
+          }
         }
       }
     }
@@ -160,12 +198,10 @@ router.get("/playlist", async (req: Request, res: Response) => {
         .lean() as any[];
 
       for (const asset of directAssets) {
-        flattenedAssets.push({
-          assetId: asset._id.toString(),
-          type: asset.type,
-          url: asset.url,
-          duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
-        });
+        const formattedAsset = formatAsset(asset);
+        if (formattedAsset) {
+          flattenedAssets.push(formattedAsset);
+        }
       }
     }
 
@@ -179,24 +215,19 @@ router.get("/playlist", async (req: Request, res: Response) => {
         if (item.assetId) {
           const asset = await Asset.findById(item.assetId).lean() as any;
           if (asset) {
-            flattenedAssets.push({
-              assetId: asset._id.toString(),
-              type: asset.type,
-              url: asset.url,
-              duration: item.duration || asset.duration || 10,
-            });
+            const formattedAsset = formatAsset(asset, item.duration);
+            if (formattedAsset) {
+              flattenedAssets.push(formattedAsset);
+            }
           }
         }
       }
     }
 
     // Return the exact format for Android player
-    // DO NOT return campaignIds - return FLATTENED assets
+    // Only playlistId and assets array - no nested structures
     const response: PlayerPlaylistResponse = {
       playlistId: playlist._id.toString(),
-      playlistName: playlist.name,
-      status: playlist.status,
-      totalAssets: flattenedAssets.length,
       assets: flattenedAssets,
     };
 
@@ -243,6 +274,48 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
       });
     }
 
+    // Check if playlist is active or scheduled
+    if (playlist.status === "inactive") {
+      return res.status(200).json({
+        playlistId: playlist._id.toString(),
+        assets: [],
+      });
+    }
+
+    // Helper function to convert type to lowercase and validate asset
+    const formatAsset = (asset: any, durationOverride?: number): FlattenedAsset | null => {
+      // Validate required fields
+      if (!asset._id || !asset.type || !asset.url) {
+        console.warn(`Skipping asset with missing required fields: ${asset._id}`);
+        return null;
+      }
+
+      // Convert type to lowercase
+      const typeLower = asset.type.toLowerCase();
+      
+      // Android Player only supports "image" or "video" - filter out others
+      if (typeLower !== "image" && typeLower !== "video") {
+        console.warn(`Skipping asset with unsupported type: ${asset.type} (only image/video supported)`);
+        return null;
+      }
+
+      // Calculate duration
+      const duration = durationOverride ?? asset.duration ?? (asset.type === "VIDEO" ? 0 : 10);
+
+      // Ensure URL is valid (should be full CDN URL)
+      if (!asset.url || asset.url.trim() === "") {
+        console.warn(`Skipping asset with empty URL: ${asset._id}`);
+        return null;
+      }
+
+      return {
+        assetId: asset._id.toString(),
+        type: typeLower as "image" | "video",
+        url: asset.url.trim(),
+        duration: Math.max(0, duration), // Ensure non-negative duration
+      };
+    };
+
     // Build flattened assets array
     const flattenedAssets: FlattenedAsset[] = [];
 
@@ -255,12 +328,10 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
           .lean() as any[];
 
         for (const asset of campaignAssets) {
-          flattenedAssets.push({
-            assetId: asset._id.toString(),
-            type: asset.type,
-            url: asset.url,
-            duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
-          });
+          const formattedAsset = formatAsset(asset);
+          if (formattedAsset) {
+            flattenedAssets.push(formattedAsset);
+          }
         }
       }
     }
@@ -275,12 +346,10 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
         .lean() as any[];
 
       for (const asset of directAssets) {
-        flattenedAssets.push({
-          assetId: asset._id.toString(),
-          type: asset.type,
-          url: asset.url,
-          duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
-        });
+        const formattedAsset = formatAsset(asset);
+        if (formattedAsset) {
+          flattenedAssets.push(formattedAsset);
+        }
       }
     }
 
@@ -294,22 +363,19 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
         if (item.assetId) {
           const asset = await Asset.findById(item.assetId).lean() as any;
           if (asset) {
-            flattenedAssets.push({
-              assetId: asset._id.toString(),
-              type: asset.type,
-              url: asset.url,
-              duration: item.duration || asset.duration || 10,
-            });
+            const formattedAsset = formatAsset(asset, item.duration);
+            if (formattedAsset) {
+              flattenedAssets.push(formattedAsset);
+            }
           }
         }
       }
     }
 
+    // Return the exact format for Android player
+    // Only playlistId and assets array - no nested structures
     const response: PlayerPlaylistResponse = {
       playlistId: playlist._id.toString(),
-      playlistName: playlist.name,
-      status: playlist.status,
-      totalAssets: flattenedAssets.length,
       assets: flattenedAssets,
     };
 
