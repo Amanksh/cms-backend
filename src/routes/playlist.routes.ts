@@ -153,15 +153,15 @@ router.get("/", async (req: Request, res: Response) => {
       const directAssetCount = (playlist.assetIds || []).length;
 
       return {
-        ...playlist,
-        campaigns: (playlist.campaignIds || []).map((campaign: any) => ({
-          ...campaign,
-          assetCount: assetCountMap.get(campaign._id.toString()) || 0,
-        })),
+      ...playlist,
+      campaigns: (playlist.campaignIds || []).map((campaign: any) => ({
+        ...campaign,
+        assetCount: assetCountMap.get(campaign._id.toString()) || 0,
+      })),
         directAssets: playlist.assetIds || [],
-        campaignCount: (playlist.campaignIds || []).length,
+      campaignCount: (playlist.campaignIds || []).length,
         directAssetCount,
-        maxCampaigns: MAX_CAMPAIGNS_PER_PLAYLIST,
+      maxCampaigns: MAX_CAMPAIGNS_PER_PLAYLIST,
         totalAssetCount: campaignAssetCount + directAssetCount,
       };
     });
@@ -314,37 +314,41 @@ router.post("/", async (req: Request, res: Response) => {
       });
     }
 
-    // Validate campaignIds if provided
+    // Normalize and validate campaignIds - ensure only IDs are stored (no nested objects)
     let validatedCampaignIds: mongoose.Types.ObjectId[] = [];
 
-    if (playlistData.campaignIds && playlistData.campaignIds.length > 0) {
+    if (playlistData.campaignIds && Array.isArray(playlistData.campaignIds) && playlistData.campaignIds.length > 0) {
+      // Extract only IDs (handle both string IDs and potential nested objects)
+      const extractedIds = playlistData.campaignIds.map((item: any) => {
+        // If it's already a string ID, use it
+        if (typeof item === "string") {
+          return item;
+        }
+        // If it's an object with _id, extract the _id
+        if (item && typeof item === "object" && item._id) {
+          return item._id;
+        }
+        // Otherwise, try to convert to string
+        return String(item);
+      }).filter((id: string) => mongoose.Types.ObjectId.isValid(id));
+
       // Check max limit
-      if (playlistData.campaignIds.length > MAX_CAMPAIGNS_PER_PLAYLIST) {
+      if (extractedIds.length > MAX_CAMPAIGNS_PER_PLAYLIST) {
         return res.status(400).json({
           success: false,
           message: `Maximum ${MAX_CAMPAIGNS_PER_PLAYLIST} campaigns allowed in one playlist.`,
-          provided: playlistData.campaignIds.length,
+          provided: extractedIds.length,
           maxAllowed: MAX_CAMPAIGNS_PER_PLAYLIST,
         });
       }
 
-      // Validate all campaign IDs
-      for (const campaignId of playlistData.campaignIds) {
-        if (!mongoose.Types.ObjectId.isValid(campaignId)) {
-          return res.status(400).json({
-            success: false,
-            message: `Invalid campaign ID format: ${campaignId}`,
-          });
-        }
-      }
-
       // Verify all campaigns exist
       const existingCampaigns = await Campaign.find({
-        _id: { $in: playlistData.campaignIds },
+        _id: { $in: extractedIds },
       }).select("_id");
 
       const existingIds = new Set(existingCampaigns.map(c => c._id.toString()));
-      const missingIds = playlistData.campaignIds.filter(id => !existingIds.has(id));
+      const missingIds = extractedIds.filter((id: string) => !existingIds.has(id));
 
       if (missingIds.length > 0) {
         return res.status(404).json({
@@ -353,31 +357,36 @@ router.post("/", async (req: Request, res: Response) => {
         });
       }
 
-      validatedCampaignIds = playlistData.campaignIds.map(id => new mongoose.Types.ObjectId(id));
+      // Convert to ObjectIds - store ONLY IDs, no nested objects
+      validatedCampaignIds = extractedIds.map((id: string) => new mongoose.Types.ObjectId(id));
     }
 
-    // Validate assetIds if provided (direct assets)
+    // Normalize and validate assetIds - ensure only IDs are stored (no nested objects)
     let validatedAssetIds: mongoose.Types.ObjectId[] = [];
 
-    if (playlistData.assetIds && playlistData.assetIds.length > 0) {
-      // Validate all asset IDs
-      for (const assetId of playlistData.assetIds) {
-        if (!mongoose.Types.ObjectId.isValid(assetId)) {
-          return res.status(400).json({
-            success: false,
-            message: `Invalid asset ID format: ${assetId}`,
-          });
+    if (playlistData.assetIds && Array.isArray(playlistData.assetIds) && playlistData.assetIds.length > 0) {
+      // Extract only IDs (handle both string IDs and potential nested objects)
+      const extractedIds = playlistData.assetIds.map((item: any) => {
+        // If it's already a string ID, use it
+        if (typeof item === "string") {
+          return item;
         }
-      }
+        // If it's an object with _id, extract the _id
+        if (item && typeof item === "object" && item._id) {
+          return item._id;
+        }
+        // Otherwise, try to convert to string
+        return String(item);
+      }).filter((id: string) => mongoose.Types.ObjectId.isValid(id));
 
       // Verify all assets exist and are direct assets (no campaignId)
       const existingAssets = await Asset.find({
-        _id: { $in: playlistData.assetIds },
+        _id: { $in: extractedIds },
         campaignId: null, // Only allow direct assets
       }).select("_id");
 
       const existingAssetIds = new Set(existingAssets.map(a => a._id.toString()));
-      const missingAssetIds = playlistData.assetIds.filter(id => !existingAssetIds.has(id));
+      const missingAssetIds = extractedIds.filter((id: string) => !existingAssetIds.has(id));
 
       if (missingAssetIds.length > 0) {
         return res.status(404).json({
@@ -386,7 +395,8 @@ router.post("/", async (req: Request, res: Response) => {
         });
       }
 
-      validatedAssetIds = playlistData.assetIds.map(id => new mongoose.Types.ObjectId(id));
+      // Convert to ObjectIds - store ONLY IDs, no nested objects
+      validatedAssetIds = extractedIds.map((id: string) => new mongoose.Types.ObjectId(id));
     }
 
     // Validate status if provided
@@ -414,8 +424,8 @@ router.post("/", async (req: Request, res: Response) => {
     // Populate campaigns and assets for response
     await playlist.populate([
       {
-        path: "campaignIds",
-        select: "name description createdAt",
+      path: "campaignIds",
+      select: "name description createdAt",
       },
       {
         path: "assetIds",
@@ -513,7 +523,7 @@ router.put("/:id", async (req: Request, res: Response) => {
       updates.status = updateData.status;
     }
 
-    // Handle campaignIds update
+    // Normalize and validate campaignIds - ensure only IDs are stored (no nested objects)
     if (updateData.campaignIds !== undefined) {
       if (!Array.isArray(updateData.campaignIds)) {
         return res.status(400).json({
@@ -522,34 +532,38 @@ router.put("/:id", async (req: Request, res: Response) => {
         });
       }
 
+      // Extract only IDs (handle both string IDs and potential nested objects)
+      const extractedIds = updateData.campaignIds.map((item: any) => {
+        // If it's already a string ID, use it
+        if (typeof item === "string") {
+          return item;
+        }
+        // If it's an object with _id, extract the _id
+        if (item && typeof item === "object" && item._id) {
+          return item._id;
+        }
+        // Otherwise, try to convert to string
+        return String(item);
+      }).filter((id: string) => mongoose.Types.ObjectId.isValid(id));
+
       // Check max limit
-      if (updateData.campaignIds.length > MAX_CAMPAIGNS_PER_PLAYLIST) {
+      if (extractedIds.length > MAX_CAMPAIGNS_PER_PLAYLIST) {
         return res.status(400).json({
           success: false,
           message: `Maximum ${MAX_CAMPAIGNS_PER_PLAYLIST} campaigns allowed in one playlist.`,
-          provided: updateData.campaignIds.length,
+          provided: extractedIds.length,
           maxAllowed: MAX_CAMPAIGNS_PER_PLAYLIST,
         });
       }
 
-      // Validate all campaign IDs
-      for (const campaignId of updateData.campaignIds) {
-        if (!mongoose.Types.ObjectId.isValid(campaignId)) {
-          return res.status(400).json({
-            success: false,
-            message: `Invalid campaign ID format: ${campaignId}`,
-          });
-        }
-      }
-
       // Verify all campaigns exist
-      if (updateData.campaignIds.length > 0) {
+      if (extractedIds.length > 0) {
         const existingCampaigns = await Campaign.find({
-          _id: { $in: updateData.campaignIds },
+          _id: { $in: extractedIds },
         }).select("_id");
 
         const existingIds = new Set(existingCampaigns.map(c => c._id.toString()));
-        const missingIds = updateData.campaignIds.filter((cid: string) => !existingIds.has(cid));
+        const missingIds = extractedIds.filter((id: string) => !existingIds.has(id));
 
         if (missingIds.length > 0) {
           return res.status(404).json({
@@ -559,10 +573,11 @@ router.put("/:id", async (req: Request, res: Response) => {
         }
       }
 
-      updates.campaignIds = updateData.campaignIds.map((cid: string) => new mongoose.Types.ObjectId(cid));
+      // Store ONLY IDs (convert to ObjectIds) - no nested objects
+      updates.campaignIds = extractedIds.map((id: string) => new mongoose.Types.ObjectId(id));
     }
 
-    // Handle assetIds update (direct assets)
+    // Normalize and validate assetIds - ensure only IDs are stored (no nested objects)
     if (updateData.assetIds !== undefined) {
       if (!Array.isArray(updateData.assetIds)) {
         return res.status(400).json({
@@ -571,25 +586,29 @@ router.put("/:id", async (req: Request, res: Response) => {
         });
       }
 
-      // Validate all asset IDs
-      for (const assetId of updateData.assetIds) {
-        if (!mongoose.Types.ObjectId.isValid(assetId)) {
-          return res.status(400).json({
-            success: false,
-            message: `Invalid asset ID format: ${assetId}`,
-          });
+      // Extract only IDs (handle both string IDs and potential nested objects)
+      const extractedIds = updateData.assetIds.map((item: any) => {
+        // If it's already a string ID, use it
+        if (typeof item === "string") {
+          return item;
         }
-      }
+        // If it's an object with _id, extract the _id
+        if (item && typeof item === "object" && item._id) {
+          return item._id;
+        }
+        // Otherwise, try to convert to string
+        return String(item);
+      }).filter((id: string) => mongoose.Types.ObjectId.isValid(id));
 
       // Verify all assets exist and are direct assets (no campaignId)
-      if (updateData.assetIds.length > 0) {
+      if (extractedIds.length > 0) {
         const existingAssets = await Asset.find({
-          _id: { $in: updateData.assetIds },
+          _id: { $in: extractedIds },
           campaignId: null, // Only allow direct assets
         }).select("_id");
 
         const existingAssetIds = new Set(existingAssets.map(a => a._id.toString()));
-        const missingAssetIds = updateData.assetIds.filter((aid: string) => !existingAssetIds.has(aid));
+        const missingAssetIds = extractedIds.filter((id: string) => !existingAssetIds.has(id));
 
         if (missingAssetIds.length > 0) {
           return res.status(404).json({
@@ -599,7 +618,8 @@ router.put("/:id", async (req: Request, res: Response) => {
         }
       }
 
-      updates.assetIds = updateData.assetIds.map((aid: string) => new mongoose.Types.ObjectId(aid));
+      // Store ONLY IDs (convert to ObjectIds) - no nested objects
+      updates.assetIds = extractedIds.map((id: string) => new mongoose.Types.ObjectId(id));
     }
 
     if (updateData.schedule !== undefined) {
@@ -613,8 +633,8 @@ router.put("/:id", async (req: Request, res: Response) => {
     )
       .populate([
         {
-          path: "campaignIds",
-          select: "name description createdAt",
+        path: "campaignIds",
+        select: "name description createdAt",
         },
         {
           path: "assetIds",
@@ -700,6 +720,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
       updates.status = updateData.status;
     }
 
+    // Normalize and validate campaignIds - ensure only IDs are stored (no nested objects)
     if (updateData.campaignIds !== undefined) {
       if (!Array.isArray(updateData.campaignIds)) {
         return res.status(400).json({
@@ -708,29 +729,34 @@ router.patch("/:id", async (req: Request, res: Response) => {
         });
       }
 
-      if (updateData.campaignIds.length > MAX_CAMPAIGNS_PER_PLAYLIST) {
+      // Extract only IDs (handle both string IDs and potential nested objects)
+      const extractedIds = updateData.campaignIds.map((item: any) => {
+        // If it's already a string ID, use it
+        if (typeof item === "string") {
+          return item;
+        }
+        // If it's an object with _id, extract the _id
+        if (item && typeof item === "object" && item._id) {
+          return item._id;
+        }
+        // Otherwise, try to convert to string
+        return String(item);
+      }).filter((id: string) => mongoose.Types.ObjectId.isValid(id));
+
+      if (extractedIds.length > MAX_CAMPAIGNS_PER_PLAYLIST) {
         return res.status(400).json({
           success: false,
           message: `Maximum ${MAX_CAMPAIGNS_PER_PLAYLIST} campaigns allowed per playlist.`,
         });
       }
 
-      for (const campaignId of updateData.campaignIds) {
-        if (!mongoose.Types.ObjectId.isValid(campaignId)) {
-          return res.status(400).json({
-            success: false,
-            message: `Invalid campaign ID format: ${campaignId}`,
-          });
-        }
-      }
-
-      if (updateData.campaignIds.length > 0) {
+      if (extractedIds.length > 0) {
         const existingCampaigns = await Campaign.find({
-          _id: { $in: updateData.campaignIds },
+          _id: { $in: extractedIds },
         }).select("_id");
 
         const existingIds = new Set(existingCampaigns.map(c => c._id.toString()));
-        const missingIds = updateData.campaignIds.filter((cid: string) => !existingIds.has(cid));
+        const missingIds = extractedIds.filter((id: string) => !existingIds.has(id));
 
         if (missingIds.length > 0) {
           return res.status(404).json({
@@ -740,9 +766,11 @@ router.patch("/:id", async (req: Request, res: Response) => {
         }
       }
 
-      updates.campaignIds = updateData.campaignIds.map((cid: string) => new mongoose.Types.ObjectId(cid));
+      // Store ONLY IDs (convert to ObjectIds) - no nested objects
+      updates.campaignIds = extractedIds.map((id: string) => new mongoose.Types.ObjectId(id));
     }
 
+    // Normalize and validate assetIds - ensure only IDs are stored (no nested objects)
     if (updateData.assetIds !== undefined) {
       if (!Array.isArray(updateData.assetIds)) {
         return res.status(400).json({
@@ -751,23 +779,28 @@ router.patch("/:id", async (req: Request, res: Response) => {
         });
       }
 
-      for (const assetId of updateData.assetIds) {
-        if (!mongoose.Types.ObjectId.isValid(assetId)) {
-          return res.status(400).json({
-            success: false,
-            message: `Invalid asset ID format: ${assetId}`,
-          });
+      // Extract only IDs (handle both string IDs and potential nested objects)
+      const extractedIds = updateData.assetIds.map((item: any) => {
+        // If it's already a string ID, use it
+        if (typeof item === "string") {
+          return item;
         }
-      }
+        // If it's an object with _id, extract the _id
+        if (item && typeof item === "object" && item._id) {
+          return item._id;
+        }
+        // Otherwise, try to convert to string
+        return String(item);
+      }).filter((id: string) => mongoose.Types.ObjectId.isValid(id));
 
-      if (updateData.assetIds.length > 0) {
+      if (extractedIds.length > 0) {
         const existingAssets = await Asset.find({
-          _id: { $in: updateData.assetIds },
+          _id: { $in: extractedIds },
           campaignId: null,
         }).select("_id");
 
         const existingAssetIds = new Set(existingAssets.map(a => a._id.toString()));
-        const missingAssetIds = updateData.assetIds.filter((aid: string) => !existingAssetIds.has(aid));
+        const missingAssetIds = extractedIds.filter((id: string) => !existingAssetIds.has(id));
 
         if (missingAssetIds.length > 0) {
           return res.status(404).json({
@@ -777,7 +810,8 @@ router.patch("/:id", async (req: Request, res: Response) => {
         }
       }
 
-      updates.assetIds = updateData.assetIds.map((aid: string) => new mongoose.Types.ObjectId(aid));
+      // Store ONLY IDs (convert to ObjectIds) - no nested objects
+      updates.assetIds = extractedIds.map((id: string) => new mongoose.Types.ObjectId(id));
     }
 
     if (updateData.schedule !== undefined) {
