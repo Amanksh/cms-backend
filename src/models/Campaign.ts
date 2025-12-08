@@ -38,8 +38,17 @@ const CampaignSchema = new Schema<ICampaign>(
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
+
+// Virtual populate for assets (allows nested populate in playlists)
+CampaignSchema.virtual("assets", {
+  ref: "Asset",
+  localField: "_id",
+  foreignField: "campaignId",
+});
 
 // Compound unique index for name per user (matches frontend)
 CampaignSchema.index({ name: 1, userId: 1 }, { unique: true });

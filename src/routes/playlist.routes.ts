@@ -550,7 +550,7 @@ router.get("/:id", async (req: Request, res: Response) => {
       assets: finalAssets,
     });
   } catch (error: any) {
-    console.error("[PLAYLIST_FETCH] Error fetching playlist:", error);
+    console.error("[PLAYLIST_PREVIEW] Error fetching playlist:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch playlist",
