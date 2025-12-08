@@ -200,9 +200,169 @@ router.get("/", async (req: Request, res: Response) => {
 // ============================================================================
 
 /**
+ * Helper function to expand campaigns and collect all assets
+ * Returns a flattened array of all assets from campaigns and direct assets
+ */
+async function expandPlaylistAssets(playlist: any): Promise<{
+  finalAssets: any[];
+  campaignAssets: any[];
+  directAssets: any[];
+  debugLogs: string[];
+}> {
+  const debugLogs: string[] = [];
+  const finalAssets: any[] = [];
+  const seenAssetIds = new Set<string>();
+
+  debugLogs.push(`[PLAYLIST_EXPAND] Starting asset expansion for playlist: ${playlist._id}`);
+  debugLogs.push(`[PLAYLIST_EXPAND] Playlist has ${playlist.campaignIds?.length || 0} campaigns and ${playlist.assetIds?.length || 0} direct assets`);
+
+  // 1. Expand campaigns and collect all assets
+  const campaignAssets: any[] = [];
+  if (playlist.campaignIds && playlist.campaignIds.length > 0) {
+    debugLogs.push(`[PLAYLIST_EXPAND] Processing ${playlist.campaignIds.length} campaigns...`);
+    
+    for (let i = 0; i < playlist.campaignIds.length; i++) {
+      const campaignId = playlist.campaignIds[i];
+      const campaignIdStr = campaignId.toString ? campaignId.toString() : campaignId._id?.toString() || campaignId;
+      
+      debugLogs.push(`[PLAYLIST_EXPAND] Campaign ${i + 1}/${playlist.campaignIds.length}: ${campaignIdStr}`);
+      
+      try {
+        // Fetch campaign to verify it exists
+        const campaign = await Campaign.findById(campaignIdStr).lean() as any;
+        if (!campaign) {
+          debugLogs.push(`[PLAYLIST_EXPAND] WARNING: Campaign ${campaignIdStr} not found, skipping`);
+          continue;
+        }
+        
+        debugLogs.push(`[PLAYLIST_EXPAND] Campaign found: ${campaign.name || 'Unnamed'}`);
+        
+        // Fetch all assets in this campaign
+        const assets = await Asset.find({ campaignId: campaignIdStr })
+          .select("_id name type url thumbnail duration size createdAt")
+          .sort({ createdAt: 1 })
+          .lean() as any[];
+        
+        debugLogs.push(`[PLAYLIST_EXPAND] Found ${assets.length} assets in campaign ${campaign.name || campaignIdStr}`);
+        
+        // Add assets to campaignAssets array and finalAssets (avoiding duplicates)
+        for (const asset of assets) {
+          const assetIdStr = asset._id.toString();
+          
+          if (!seenAssetIds.has(assetIdStr)) {
+            seenAssetIds.add(assetIdStr);
+            campaignAssets.push(asset);
+            finalAssets.push({
+              assetId: assetIdStr,
+              name: asset.name,
+              type: asset.type,
+              url: asset.url,
+              thumbnail: asset.thumbnail,
+              duration: asset.duration,
+              size: asset.size,
+              createdAt: asset.createdAt,
+            });
+            debugLogs.push(`[PLAYLIST_EXPAND] Added asset: ${asset.name || assetIdStr} (${asset.type})`);
+          } else {
+            debugLogs.push(`[PLAYLIST_EXPAND] Skipped duplicate asset: ${asset.name || assetIdStr}`);
+          }
+        }
+      } catch (error: any) {
+        debugLogs.push(`[PLAYLIST_EXPAND] ERROR processing campaign ${campaignIdStr}: ${error.message}`);
+        console.error(`Error fetching campaign ${campaignIdStr}:`, error);
+      }
+    }
+  } else {
+    debugLogs.push(`[PLAYLIST_EXPAND] No campaigns in playlist`);
+  }
+
+  // 2. Add direct assets (standalone assets not in any campaign)
+  const directAssets: any[] = [];
+  if (playlist.assetIds && playlist.assetIds.length > 0) {
+    debugLogs.push(`[PLAYLIST_EXPAND] Processing ${playlist.assetIds.length} direct assets...`);
+    
+    const directAssetsData = await Asset.find({
+      _id: { $in: playlist.assetIds },
+    })
+      .select("_id name type url thumbnail duration size createdAt")
+      .sort({ createdAt: 1 })
+      .lean() as any[];
+
+    debugLogs.push(`[PLAYLIST_EXPAND] Found ${directAssetsData.length} direct assets in database`);
+
+    for (const asset of directAssetsData) {
+      const assetIdStr = asset._id.toString();
+      
+      if (!seenAssetIds.has(assetIdStr)) {
+        seenAssetIds.add(assetIdStr);
+        directAssets.push(asset);
+        finalAssets.push({
+          assetId: assetIdStr,
+          name: asset.name,
+          type: asset.type,
+          url: asset.url,
+          thumbnail: asset.thumbnail,
+          duration: asset.duration,
+          size: asset.size,
+          createdAt: asset.createdAt,
+        });
+        debugLogs.push(`[PLAYLIST_EXPAND] Added direct asset: ${asset.name || assetIdStr} (${asset.type})`);
+      } else {
+        debugLogs.push(`[PLAYLIST_EXPAND] Skipped duplicate direct asset: ${asset.name || assetIdStr}`);
+      }
+    }
+  } else {
+    debugLogs.push(`[PLAYLIST_EXPAND] No direct assets in playlist`);
+  }
+
+  // 3. Legacy support: If no campaigns/direct assets but has items, use items
+  if (finalAssets.length === 0 && playlist.items && playlist.items.length > 0) {
+    debugLogs.push(`[PLAYLIST_EXPAND] No campaign/direct assets found, checking legacy items...`);
+    debugLogs.push(`[PLAYLIST_EXPAND] Found ${playlist.items.length} legacy items`);
+    
+    for (const item of playlist.items) {
+      if (item.assetId) {
+        try {
+          const asset = await Asset.findById(item.assetId).lean() as any;
+          if (asset) {
+            const assetIdStr = asset._id.toString();
+            if (!seenAssetIds.has(assetIdStr)) {
+              seenAssetIds.add(assetIdStr);
+              finalAssets.push({
+                assetId: assetIdStr,
+                name: asset.name,
+                type: asset.type,
+                url: asset.url,
+                thumbnail: asset.thumbnail,
+                duration: item.duration || asset.duration,
+                size: asset.size,
+                createdAt: asset.createdAt,
+              });
+              debugLogs.push(`[PLAYLIST_EXPAND] Added legacy item asset: ${asset.name || assetIdStr}`);
+            }
+          }
+        } catch (error: any) {
+          debugLogs.push(`[PLAYLIST_EXPAND] ERROR fetching legacy asset ${item.assetId}: ${error.message}`);
+        }
+      }
+    }
+  }
+
+  debugLogs.push(`[PLAYLIST_EXPAND] Final asset count: ${finalAssets.length} (${campaignAssets.length} from campaigns, ${directAssets.length} direct)`);
+  
+  return {
+    finalAssets,
+    campaignAssets,
+    directAssets,
+    debugLogs,
+  };
+}
+
+/**
  * GET /api/playlists/:id
  * 
  * Gets a single playlist by ID with all campaigns, their assets, and direct assets expanded.
+ * Now includes finalAssets array with all flattened assets.
  */
 router.get("/:id", async (req: Request, res: Response) => {
   try {
@@ -216,6 +376,8 @@ router.get("/:id", async (req: Request, res: Response) => {
       });
     }
 
+    console.log(`[PLAYLIST_FETCH] Fetching playlist: ${id}`);
+
     const playlist = await Playlist.findById(id)
       .populate({
         path: "campaignIds",
@@ -228,21 +390,31 @@ router.get("/:id", async (req: Request, res: Response) => {
       .lean() as any;
 
     if (!playlist) {
+      console.log(`[PLAYLIST_FETCH] Playlist ${id} not found`);
       return res.status(404).json({
         success: false,
         message: "Playlist not found",
       });
     }
 
-    // Get all assets for the campaigns in this playlist
-    const campaignIds = (playlist.campaignIds || []).map((c: any) => c._id);
-    const campaignAssets = await Asset.find({ campaignId: { $in: campaignIds } })
+    console.log(`[PLAYLIST_FETCH] Playlist found: ${playlist.name}`);
+    console.log(`[PLAYLIST_FETCH] Campaigns: ${playlist.campaignIds?.length || 0}, Direct assets: ${playlist.assetIds?.length || 0}`);
+
+    // Expand campaigns and collect all assets
+    const { finalAssets, campaignAssets, directAssets, debugLogs } = await expandPlaylistAssets(playlist);
+
+    // Log all debug information
+    debugLogs.forEach(log => console.log(log));
+
+    // Get all assets for the campaigns in this playlist (for grouping by campaign)
+    const campaignIds = (playlist.campaignIds || []).map((c: any) => c._id?.toString() || c.toString());
+    const allCampaignAssets = await Asset.find({ campaignId: { $in: campaignIds } })
       .sort({ campaignId: 1, createdAt: 1 })
       .lean();
 
-    // Group assets by campaign
+    // Group assets by campaign for the campaigns array
     const assetsByCampaign = new Map<string, any[]>();
-    campaignAssets.forEach(asset => {
+    allCampaignAssets.forEach(asset => {
       const campaignIdStr = (asset.campaignId as mongoose.Types.ObjectId).toString();
       if (!assetsByCampaign.has(campaignIdStr)) {
         assetsByCampaign.set(campaignIdStr, []);
@@ -253,30 +425,36 @@ router.get("/:id", async (req: Request, res: Response) => {
     // Enhance campaigns with their assets
     const campaignsWithAssets = (playlist.campaignIds || []).map((campaign: any) => ({
       ...campaign,
-      assets: assetsByCampaign.get(campaign._id.toString()) || [],
-      assetCount: (assetsByCampaign.get(campaign._id.toString()) || []).length,
+      assets: assetsByCampaign.get(campaign._id?.toString() || campaign.toString()) || [],
+      assetCount: (assetsByCampaign.get(campaign._id?.toString() || campaign.toString()) || []).length,
     }));
 
-    // Get direct assets count
-    const directAssets = playlist.assetIds || [];
     const directAssetCount = directAssets.length;
     const campaignAssetCount = campaignAssets.length;
+
+    console.log(`[PLAYLIST_FETCH] Returning playlist with ${finalAssets.length} final assets`);
 
     return res.status(200).json({
       success: true,
       data: {
         ...playlist,
+        playlistId: playlist._id.toString(),
         campaigns: campaignsWithAssets,
-        directAssets: directAssets,
+        assets: allCampaignAssets, // All campaign assets (grouped)
+        directAssets: directAssets, // Direct assets
+        finalAssets: finalAssets, // Flattened array of ALL assets (campaigns + direct, no duplicates)
         campaignCount: campaignsWithAssets.length,
         directAssetCount,
+        campaignAssetCount,
         maxCampaigns: MAX_CAMPAIGNS_PER_PLAYLIST,
         totalAssetCount: campaignAssetCount + directAssetCount,
+        finalAssetCount: finalAssets.length,
         canAddMoreCampaigns: campaignsWithAssets.length < MAX_CAMPAIGNS_PER_PLAYLIST,
+        debugLogs: process.env.NODE_ENV === "development" ? debugLogs : undefined,
       },
     });
   } catch (error: any) {
-    console.error("Error fetching playlist:", error);
+    console.error("[PLAYLIST_FETCH] Error fetching playlist:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch playlist",

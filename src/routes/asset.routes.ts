@@ -198,7 +198,7 @@ router.get("/", async (req: Request, res: Response) => {
           message: "Invalid campaign ID format",
         });
       } else {
-        filter.campaignId = new mongoose.Types.ObjectId(campaignId);
+      filter.campaignId = new mongoose.Types.ObjectId(campaignId);
       }
     }
 
@@ -887,11 +887,11 @@ router.post("/", async (req: Request, res: Response) => {
     );
 
     if (missingFields.length > 0) {
-      return res.status(400).json({
-        success: false,
+        return res.status(400).json({
+          success: false,
         message: `Missing required fields: ${missingFields.join(", ")}`,
-      });
-    }
+        });
+      }
 
     // Validate asset type
     const validTypes = ["IMAGE", "VIDEO", "HTML", "URL"];
@@ -909,36 +909,36 @@ router.post("/", async (req: Request, res: Response) => {
 
     // If campaignId is provided and not empty/null, validate it
     if (assetData.campaignId && assetData.campaignId !== "null" && assetData.campaignId !== "") {
-      // Validate campaignId format
-      if (!mongoose.Types.ObjectId.isValid(assetData.campaignId)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid campaign ID format",
-        });
-      }
-
-      // Validate campaign exists
-      campaign = await Campaign.findById(assetData.campaignId);
-      if (!campaign) {
-        return res.status(404).json({
-          success: false,
-          message: "Campaign not found",
-        });
-      }
-
-      // Check asset count limit for this campaign
-      currentAssetCount = await Asset.countDocuments({
-        campaignId: assetData.campaignId,
+    // Validate campaignId format
+    if (!mongoose.Types.ObjectId.isValid(assetData.campaignId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid campaign ID format",
       });
+    }
 
-      if (currentAssetCount >= MAX_ASSETS_PER_CAMPAIGN) {
-        return res.status(400).json({
-          success: false,
-          message: `Maximum ${MAX_ASSETS_PER_CAMPAIGN} assets allowed in one Campaign.`,
-          currentCount: currentAssetCount,
-          maxAllowed: MAX_ASSETS_PER_CAMPAIGN,
-        });
-      }
+    // Validate campaign exists
+      campaign = await Campaign.findById(assetData.campaignId);
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+          message: "Campaign not found",
+      });
+    }
+
+    // Check asset count limit for this campaign
+      currentAssetCount = await Asset.countDocuments({
+      campaignId: assetData.campaignId,
+    });
+
+    if (currentAssetCount >= MAX_ASSETS_PER_CAMPAIGN) {
+      return res.status(400).json({
+        success: false,
+        message: `Maximum ${MAX_ASSETS_PER_CAMPAIGN} assets allowed in one Campaign.`,
+        currentCount: currentAssetCount,
+        maxAllowed: MAX_ASSETS_PER_CAMPAIGN,
+      });
+    }
 
       validCampaignId = assetData.campaignId;
     }
@@ -959,7 +959,7 @@ router.post("/", async (req: Request, res: Response) => {
 
     // Populate campaign info for response (if applicable)
     if (validCampaignId) {
-      await asset.populate("campaignId", "name");
+    await asset.populate("campaignId", "name");
     }
 
     // Build response
