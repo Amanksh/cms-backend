@@ -15,7 +15,7 @@ import mongoose from "mongoose";
  * Response Format for Player:
  * {
  *   "playlistId": "...",
- *   "assets": [
+ *   "items": [
  *     {
  *       "assetId": "...",
  *       "type": "video",
@@ -53,7 +53,7 @@ interface FlattenedAsset {
 
 interface PlayerPlaylistResponse {
   playlistId: string;
-  assets: FlattenedAsset[];
+  items: FlattenedAsset[];
 }
 
 // ============================================================================
@@ -74,7 +74,7 @@ interface PlayerPlaylistResponse {
  * Response Format:
  * {
  *   "playlistId": "...",
- *   "assets": [
+ *   "items": [
  *     { "assetId": "...", "type": "image", "url": "...", "duration": 10 },
  *     { "assetId": "...", "type": "video", "url": "...", "duration": 30 }
  *   ]
@@ -158,10 +158,19 @@ router.get("/playlist", async (req: Request, res: Response) => {
         return null;
       }
 
+      // Ensure URL is absolute (starts with http:// or https://)
+      let absoluteUrl = asset.url.trim();
+      if (!absoluteUrl.startsWith("http://") && !absoluteUrl.startsWith("https://")) {
+        // If relative URL, log warning but don't skip (might be handled by player)
+        console.warn(`Asset URL is not absolute: ${absoluteUrl} (assetId: ${asset._id})`);
+        // Optionally, you could prepend a base URL here if you have one configured
+        // absoluteUrl = `${process.env.CDN_BASE_URL || ''}${absoluteUrl}`;
+      }
+
       return {
         assetId: asset._id.toString(),
         type: typeLower as "image" | "video",
-        url: asset.url.trim(),
+        url: absoluteUrl,
         duration: Math.max(0, duration), // Ensure non-negative duration
       };
     };
@@ -225,10 +234,10 @@ router.get("/playlist", async (req: Request, res: Response) => {
     }
 
     // Return the exact format for Android player
-    // Only playlistId and assets array - no nested structures
+    // Only playlistId and items array - no nested structures
     const response: PlayerPlaylistResponse = {
       playlistId: playlist._id.toString(),
-      assets: flattenedAssets,
+      items: flattenedAssets,
     };
 
     return res.status(200).json(response);
@@ -278,7 +287,7 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
     if (playlist.status === "inactive") {
       return res.status(200).json({
         playlistId: playlist._id.toString(),
-        assets: [],
+        items: [],
       });
     }
 
@@ -308,10 +317,19 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
         return null;
       }
 
+      // Ensure URL is absolute (starts with http:// or https://)
+      let absoluteUrl = asset.url.trim();
+      if (!absoluteUrl.startsWith("http://") && !absoluteUrl.startsWith("https://")) {
+        // If relative URL, log warning but don't skip (might be handled by player)
+        console.warn(`Asset URL is not absolute: ${absoluteUrl} (assetId: ${asset._id})`);
+        // Optionally, you could prepend a base URL here if you have one configured
+        // absoluteUrl = `${process.env.CDN_BASE_URL || ''}${absoluteUrl}`;
+      }
+
       return {
         assetId: asset._id.toString(),
         type: typeLower as "image" | "video",
-        url: asset.url.trim(),
+        url: absoluteUrl,
         duration: Math.max(0, duration), // Ensure non-negative duration
       };
     };
@@ -373,10 +391,10 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
     }
 
     // Return the exact format for Android player
-    // Only playlistId and assets array - no nested structures
+    // Only playlistId and items array - no nested structures
     const response: PlayerPlaylistResponse = {
       playlistId: playlist._id.toString(),
-      assets: flattenedAssets,
+      items: flattenedAssets,
     };
 
     return res.status(200).json(response);
