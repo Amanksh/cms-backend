@@ -412,7 +412,8 @@ async function expandPlaylistAssets(playlist: any): Promise<{
  * GET /api/playlists/:id
  * 
  * Gets a single playlist by ID with all campaigns, their assets, and direct assets expanded.
- * Now includes finalAssets array with all flattened assets.
+ * This endpoint is used for both dashboard preview and general playlist fetching.
+ * Returns clean preview response with merged assets from campaigns and direct assets.
  */
 router.get("/:id", async (req: Request, res: Response) => {
   try {
@@ -426,48 +427,127 @@ router.get("/:id", async (req: Request, res: Response) => {
       });
     }
 
-    console.log(`[PLAYLIST_FETCH] Fetching playlist: ${id}`);
+    console.log(`[PLAYLIST_PREVIEW] Fetching playlist for preview: ${id}`);
 
+    // Step 1: Fetch playlist with populate for campaigns and direct assets
     const playlist = await Playlist.findById(id)
       .populate({
         path: "campaignIds",
         select: "name description createdAt updatedAt",
       })
       .populate({
-        path: "assetIds",
+        path: "assetIds", // Direct assets
         select: "name type url thumbnail duration size createdAt",
       })
       .lean() as any;
 
     if (!playlist) {
-      console.log(`[PLAYLIST_FETCH] Playlist ${id} not found`);
+      console.log(`[PLAYLIST_PREVIEW] Playlist ${id} not found`);
       return res.status(404).json({
         success: false,
         message: "Playlist not found",
       });
     }
 
-    console.log(`[PLAYLIST_FETCH] Playlist found: ${playlist.name}`);
-    console.log(`[PLAYLIST_FETCH] Campaigns: ${playlist.campaignIds?.length || 0}, Direct assets: ${playlist.assetIds?.length || 0}`);
+    console.log(`[PLAYLIST_PREVIEW] Playlist found: ${playlist.name}`);
+    console.log(`[PLAYLIST_PREVIEW] Campaigns: ${playlist.campaignIds?.length || 0}, Direct assets: ${playlist.assetIds?.length || 0}`);
 
-    // Expand campaigns and collect all assets
-    const { finalAssets, debugLogs } = await expandPlaylistAssets(playlist);
-
-    // Log all debug information
-    debugLogs.forEach(log => console.log(log));
-
-    console.log(`[PLAYLIST_FETCH] Returning playlist with ${finalAssets.length} final assets`);
-    
-    // Validate that we have assets when campaigns exist
-    if (playlist.campaignIds && playlist.campaignIds.length > 0 && finalAssets.length === 0) {
-      console.warn(`[PLAYLIST_FETCH] WARNING: Playlist has ${playlist.campaignIds.length} campaigns but no assets found!`);
+    // Manually populate campaign assets (simulating nested populate)
+    // This ensures campaign.assets is populated correctly
+    if (playlist.campaignIds && Array.isArray(playlist.campaignIds) && playlist.campaignIds.length > 0) {
+      console.log(`[PLAYLIST_PREVIEW] Populating assets for ${playlist.campaignIds.length} campaigns...`);
+      
+      for (const campaign of playlist.campaignIds) {
+        if (campaign && campaign._id) {
+          const campaignId = campaign._id.toString();
+          const campaignAssets = await Asset.find({ campaignId: new mongoose.Types.ObjectId(campaignId) })
+            .select("name type url thumbnail duration size createdAt _id")
+            .sort({ createdAt: 1 })
+            .lean() as any[];
+          // Attach assets to campaign object (simulating nested populate)
+          campaign.assets = campaignAssets || [];
+          console.log(`[PLAYLIST_PREVIEW] Campaign "${campaign.name || 'Unnamed'}" has ${campaignAssets.length} assets`);
+        }
+      }
     }
 
-    // Return the simplified format as requested: { playlistId, name, assets: finalAssets }
+    // Step 2: Merge Campaign Assets + Direct Assets into one array
+    let finalAssets: any[] = [];
+    const seenAssetIds = new Set<string>();
+
+    // ✅ Campaign assets (from nested populate)
+    if (playlist.campaignIds && Array.isArray(playlist.campaignIds) && playlist.campaignIds.length > 0) {
+      console.log(`[PLAYLIST_PREVIEW] Processing ${playlist.campaignIds.length} campaigns with nested assets...`);
+
+      for (const campaign of playlist.campaignIds) {
+        if (campaign && campaign.assets && Array.isArray(campaign.assets) && campaign.assets.length > 0) {
+          console.log(`[PLAYLIST_PREVIEW] Campaign "${campaign.name || 'Unnamed'}" has ${campaign.assets.length} assets`);
+
+          for (const asset of campaign.assets) {
+            if (!asset || !asset._id) continue;
+
+            const assetIdStr = asset._id.toString();
+            if (!seenAssetIds.has(assetIdStr)) {
+              seenAssetIds.add(assetIdStr);
+              finalAssets.push({
+                assetId: assetIdStr,
+                name: asset.name || 'Unnamed Asset',
+                type: asset.type || 'IMAGE',
+                url: asset.url || '',
+                thumbnail: asset.thumbnail || null,
+                duration: asset.duration || (asset.type === 'VIDEO' ? 0 : 10),
+                size: asset.size || null,
+              });
+            }
+          }
+        } else {
+          console.log(`[PLAYLIST_PREVIEW] Campaign "${campaign?.name || 'Unnamed'}" has no assets`);
+        }
+      }
+    }
+
+    // ✅ Direct playlist assets
+    if (playlist.assetIds && Array.isArray(playlist.assetIds) && playlist.assetIds.length > 0) {
+      console.log(`[PLAYLIST_PREVIEW] Processing ${playlist.assetIds.length} direct assets...`);
+
+      for (const asset of playlist.assetIds) {
+        if (!asset || !asset._id) continue;
+
+        const assetIdStr = asset._id.toString();
+        if (!seenAssetIds.has(assetIdStr)) {
+          seenAssetIds.add(assetIdStr);
+          finalAssets.push({
+            assetId: assetIdStr,
+            name: asset.name || 'Unnamed Asset',
+            type: asset.type || 'IMAGE',
+            url: asset.url || '',
+            thumbnail: asset.thumbnail || null,
+            duration: asset.duration || (asset.type === 'VIDEO' ? 0 : 10),
+            size: asset.size || null,
+          });
+        }
+      }
+    }
+
+    console.log(`[PLAYLIST_PREVIEW] Resolved campaign assets:`, finalAssets);
+    console.log(`[PLAYLIST_PREVIEW] Total assets: ${finalAssets.length}`);
+
+    // Step 3: Handle TRUE empty case only
+    if (finalAssets.length === 0) {
+      console.log(`[PLAYLIST_PREVIEW] No assets found - returning empty message`);
+      return res.status(200).json({
+        message: "No content to display",
+        assets: [],
+        totalAssets: 0,
+      });
+    }
+
+    // Step 4: Return Clean Preview Response
     return res.status(200).json({
       playlistId: playlist._id.toString(),
       name: playlist.name || 'Unnamed Playlist',
-      assets: finalAssets, // Final merged asset list (campaigns + direct, no duplicates)
+      totalAssets: finalAssets.length,
+      assets: finalAssets,
     });
   } catch (error: any) {
     console.error("[PLAYLIST_FETCH] Error fetching playlist:", error);

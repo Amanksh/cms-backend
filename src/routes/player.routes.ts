@@ -114,7 +114,9 @@ router.get("/playlist", async (req: Request, res: Response) => {
       });
     }
 
-    // Get playlist
+    console.log(`[PLAYER_PLAYLIST] Step 1: Fetching playlist: ${targetPlaylistId}`);
+
+    // Step 1: Get playlist
     const playlist = await Playlist.findById(targetPlaylistId).lean() as any;
 
     if (!playlist) {
@@ -128,9 +130,12 @@ router.get("/playlist", async (req: Request, res: Response) => {
     if (playlist.status === "inactive") {
       return res.status(200).json({
         playlistId: playlist._id.toString(),
-        assets: [],
+        items: [],
       });
     }
+
+    console.log(`[PLAYER_PLAYLIST] Playlist found: ${playlist.name}`);
+    console.log(`[PLAYER_PLAYLIST] Campaign IDs: ${playlist.campaignIds?.length || 0}, Direct asset IDs: ${playlist.assetIds?.length || 0}`);
 
     // Helper function to convert type to lowercase and validate asset
     const formatAsset = (asset: any, durationOverride?: number): FlattenedAsset | null => {
@@ -193,13 +198,24 @@ router.get("/playlist", async (req: Request, res: Response) => {
         console.log(`[PLAYER_PLAYLIST] Campaign ${i + 1}/${playlist.campaignIds.length}: ${campaignIdStr}`);
         
         try {
-          // Get campaign assets
-          const campaignAssets = await Asset.find({ campaignId: campaignIdStr })
+          // Step 2: Fetch campaign
+          const campaign = await Campaign.findById(campaignIdStr).lean() as any;
+          
+          if (!campaign) {
+            console.warn(`[PLAYER_PLAYLIST] Campaign ${campaignIdStr} not found, skipping`);
+            continue;
+          }
+
+          console.log(`[PLAYER_PLAYLIST] Campaign found: ${campaign.name || 'Unnamed'}`);
+
+          // Step 3: Load all assets inside that campaign
+          const campaignObjectId = new mongoose.Types.ObjectId(campaignIdStr);
+          const campaignAssets = await Asset.find({ campaignId: campaignObjectId })
             .select("_id name type url thumbnail duration")
             .sort({ createdAt: 1 })
             .lean() as any[];
 
-          console.log(`[PLAYER_PLAYLIST] Found ${campaignAssets.length} assets in campaign ${campaignIdStr}`);
+          console.log(`[PLAYER_PLAYLIST] Step 3: Found ${campaignAssets.length} assets in campaign ${campaign.name}`);
 
           // Add each asset (flattened, no campaign reference, avoiding duplicates)
           for (const asset of campaignAssets) {
@@ -281,6 +297,7 @@ router.get("/playlist", async (req: Request, res: Response) => {
       }
     }
 
+    console.log(`[PLAYER_PLAYLIST] Resolved campaign assets:`, flattenedAssets);
     console.log(`[PLAYER_PLAYLIST] Final asset count: ${flattenedAssets.length}`);
 
     // Return the exact format for Android player
@@ -323,7 +340,9 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
       });
     }
 
-    // Get playlist
+    console.log(`[PLAYER_PLAYLIST_ID] Step 1: Fetching playlist: ${id}`);
+
+    // Step 1: Get playlist
     const playlist = await Playlist.findById(id).lean() as any;
 
     if (!playlist) {
@@ -340,6 +359,9 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
         items: [],
       });
     }
+
+    console.log(`[PLAYER_PLAYLIST_ID] Playlist found: ${playlist.name}`);
+    console.log(`[PLAYER_PLAYLIST_ID] Campaign IDs: ${playlist.campaignIds?.length || 0}, Direct asset IDs: ${playlist.assetIds?.length || 0}`);
 
     // Helper function to convert type to lowercase and validate asset
     const formatAsset = (asset: any, durationOverride?: number): FlattenedAsset | null => {
@@ -384,30 +406,55 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
       };
     };
 
-    // Build flattened assets array with debug logging
+    // Step 2 & 3: For each campaignId, fetch campaign and its assets
     const flattenedAssets: FlattenedAsset[] = [];
     const seenAssetIds = new Set<string>();
-    
-    console.log(`[PLAYER_PLAYLIST_ID] Expanding playlist: ${playlist._id}`);
-    console.log(`[PLAYER_PLAYLIST_ID] Campaigns: ${playlist.campaignIds?.length || 0}, Direct assets: ${playlist.assetIds?.length || 0}`);
 
-    // 1. Expand campaigns to get their assets (in order)
-    if (playlist.campaignIds && playlist.campaignIds.length > 0) {
-      console.log(`[PLAYER_PLAYLIST_ID] Processing ${playlist.campaignIds.length} campaigns...`);
-      
+    if (playlist.campaignIds && Array.isArray(playlist.campaignIds) && playlist.campaignIds.length > 0) {
+      console.log(`[PLAYER_PLAYLIST_ID] Step 2: Processing ${playlist.campaignIds.length} campaigns...`);
+
       for (let i = 0; i < playlist.campaignIds.length; i++) {
         const campaignId = playlist.campaignIds[i];
-        const campaignIdStr = campaignId.toString ? campaignId.toString() : campaignId._id?.toString() || campaignId;
         
-        console.log(`[PLAYER_PLAYLIST_ID] Campaign ${i + 1}/${playlist.campaignIds.length}: ${campaignIdStr}`);
-        
+        // Handle campaignId (could be ObjectId, populated object, or string)
+        let campaignIdStr: string;
+        if (campaignId && typeof campaignId === 'object' && campaignId._id) {
+          campaignIdStr = campaignId._id.toString();
+        } else if (campaignId && typeof campaignId.toString === 'function') {
+          campaignIdStr = campaignId.toString();
+        } else if (typeof campaignId === 'string') {
+          campaignIdStr = campaignId;
+        } else {
+          console.warn(`[PLAYER_PLAYLIST_ID] Invalid campaign ID at index ${i}, skipping`);
+          continue;
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(campaignIdStr)) {
+          console.warn(`[PLAYER_PLAYLIST_ID] Invalid ObjectId format: ${campaignIdStr}, skipping`);
+          continue;
+        }
+
+        console.log(`[PLAYER_PLAYLIST_ID] Step 2.${i + 1}: Fetching campaign: ${campaignIdStr}`);
+
         try {
-          const campaignAssets = await Asset.find({ campaignId: campaignIdStr })
+          // Step 2: Fetch campaign
+          const campaign = await Campaign.findById(campaignIdStr).lean() as any;
+          
+          if (!campaign) {
+            console.warn(`[PLAYER_PLAYLIST_ID] Campaign ${campaignIdStr} not found, skipping`);
+            continue;
+          }
+
+          console.log(`[PLAYER_PLAYLIST_ID] Campaign found: ${campaign.name || 'Unnamed'}`);
+
+          // Step 3: Load all assets inside that campaign
+          const campaignObjectId = new mongoose.Types.ObjectId(campaignIdStr);
+          const campaignAssets = await Asset.find({ campaignId: campaignObjectId })
             .select("_id name type url thumbnail duration")
             .sort({ createdAt: 1 })
             .lean() as any[];
 
-          console.log(`[PLAYER_PLAYLIST_ID] Found ${campaignAssets.length} assets in campaign ${campaignIdStr}`);
+          console.log(`[PLAYER_PLAYLIST_ID] Step 3: Found ${campaignAssets.length} assets in campaign ${campaign.name}`);
 
           for (const asset of campaignAssets) {
             const assetIdStr = asset._id.toString();
@@ -488,6 +535,8 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
       }
     }
 
+    console.log(`[PLAYER_PLAYLIST_ID] Resolved campaign assets:`, flattenedAssets);
+    console.log(`[PLAYER_PLAYLIST_ID] Resolved campaign assets:`, flattenedAssets);
     console.log(`[PLAYER_PLAYLIST_ID] Final asset count: ${flattenedAssets.length}`);
 
     // Return the exact format for Android player
