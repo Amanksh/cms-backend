@@ -20,11 +20,13 @@ import mongoose from "mongoose";
  *       "assetId": "...",
  *       "type": "VIDEO",
  *       "url": "...",
- *       "duration": 10,
- *       "campaignId": "..." (optional, null for direct assets)
+ *       "duration": 10
  *     }
  *   ]
  * }
+ * 
+ * NOTE: Assets are FLATTENED - no nested campaign structures.
+ * All assets (from campaigns and direct assets) are in one unified array.
  * 
  * Supports:
  * - Campaigns (folders) containing multiple assets (max 8-9 per campaign)
@@ -44,9 +46,6 @@ interface FlattenedAsset {
   type: "IMAGE" | "VIDEO" | "HTML" | "URL";
   url: string;
   duration: number;
-  campaignId: string | null;
-  name?: string;
-  thumbnail?: string;
 }
 
 interface PlayerPlaylistResponse {
@@ -73,9 +72,9 @@ interface PlayerPlaylistResponse {
  *   - deviceId: Optional device ID for device-specific playlist
  * 
  * Response: Flattened array of assets with:
- *   - assetId, type, url, duration, campaignId (optional)
+ *   - assetId, type, url, duration
  * 
- * NOTE: Does NOT return campaignIds - returns FLATTENED assets array
+ * NOTE: Does NOT return campaignIds or nested structures - returns FLATTENED assets array only
  */
 router.get("/playlist", async (req: Request, res: Response) => {
   try {
@@ -139,16 +138,13 @@ router.get("/playlist", async (req: Request, res: Response) => {
           .sort({ createdAt: 1 })
           .lean() as any[];
 
-        // Add each asset with campaign reference
+        // Add each asset (flattened, no campaign reference)
         for (const asset of campaignAssets) {
           flattenedAssets.push({
             assetId: asset._id.toString(),
             type: asset.type,
             url: asset.url,
             duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
-            campaignId: campaignId.toString(),
-            name: asset.name,
-            thumbnail: asset.thumbnail || undefined,
           });
         }
       }
@@ -169,9 +165,6 @@ router.get("/playlist", async (req: Request, res: Response) => {
           type: asset.type,
           url: asset.url,
           duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
-          campaignId: null, // Direct asset - no campaign
-          name: asset.name,
-          thumbnail: asset.thumbnail || undefined,
         });
       }
     }
@@ -191,9 +184,6 @@ router.get("/playlist", async (req: Request, res: Response) => {
               type: asset.type,
               url: asset.url,
               duration: item.duration || asset.duration || 10,
-              campaignId: null, // Legacy items don't have campaign
-              name: asset.name,
-              thumbnail: asset.thumbnail || undefined,
             });
           }
         }
@@ -270,9 +260,6 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
             type: asset.type,
             url: asset.url,
             duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
-            campaignId: campaignId.toString(),
-            name: asset.name,
-            thumbnail: asset.thumbnail || undefined,
           });
         }
       }
@@ -293,9 +280,6 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
           type: asset.type,
           url: asset.url,
           duration: asset.duration || (asset.type === "VIDEO" ? 0 : 10),
-          campaignId: null,
-          name: asset.name,
-          thumbnail: asset.thumbnail || undefined,
         });
       }
     }
@@ -315,9 +299,6 @@ router.get("/playlist/:id", async (req: Request, res: Response) => {
               type: asset.type,
               url: asset.url,
               duration: item.duration || asset.duration || 10,
-              campaignId: null,
-              name: asset.name,
-              thumbnail: asset.thumbnail || undefined,
             });
           }
         }
