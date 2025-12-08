@@ -218,12 +218,33 @@ async function expandPlaylistAssets(playlist: any): Promise<{
 
   // 1. Expand campaigns and collect all assets
   const campaignAssets: any[] = [];
-  if (playlist.campaignIds && playlist.campaignIds.length > 0) {
+  if (playlist.campaignIds && Array.isArray(playlist.campaignIds) && playlist.campaignIds.length > 0) {
     debugLogs.push(`[PLAYLIST_EXPAND] Processing ${playlist.campaignIds.length} campaigns...`);
     
     for (let i = 0; i < playlist.campaignIds.length; i++) {
       const campaignId = playlist.campaignIds[i];
-      const campaignIdStr = campaignId.toString ? campaignId.toString() : campaignId._id?.toString() || campaignId;
+      
+      // Handle both ObjectId and populated campaign objects
+      let campaignIdStr: string;
+      if (campaignId && typeof campaignId === 'object' && campaignId._id) {
+        // Populated campaign object
+        campaignIdStr = campaignId._id.toString();
+      } else if (campaignId && typeof campaignId.toString === 'function') {
+        // ObjectId
+        campaignIdStr = campaignId.toString();
+      } else if (typeof campaignId === 'string') {
+        // String ID
+        campaignIdStr = campaignId;
+      } else {
+        debugLogs.push(`[PLAYLIST_EXPAND] WARNING: Invalid campaign ID format at index ${i}, skipping`);
+        continue;
+      }
+      
+      // Validate ObjectId format
+      if (!mongoose.Types.ObjectId.isValid(campaignIdStr)) {
+        debugLogs.push(`[PLAYLIST_EXPAND] WARNING: Invalid ObjectId format: ${campaignIdStr}, skipping`);
+        continue;
+      }
       
       debugLogs.push(`[PLAYLIST_EXPAND] Campaign ${i + 1}/${playlist.campaignIds.length}: ${campaignIdStr}`);
       
@@ -237,8 +258,9 @@ async function expandPlaylistAssets(playlist: any): Promise<{
         
         debugLogs.push(`[PLAYLIST_EXPAND] Campaign found: ${campaign.name || 'Unnamed'}`);
         
-        // Fetch all assets in this campaign
-        const assets = await Asset.find({ campaignId: campaignIdStr })
+        // Fetch all assets in this campaign - use ObjectId for query
+        const campaignObjectId = new mongoose.Types.ObjectId(campaignIdStr);
+        const assets = await Asset.find({ campaignId: campaignObjectId })
           .select("_id name type url thumbnail duration size createdAt")
           .sort({ createdAt: 1 })
           .lean() as any[];
@@ -247,6 +269,11 @@ async function expandPlaylistAssets(playlist: any): Promise<{
         
         // Add assets to campaignAssets array and finalAssets (avoiding duplicates)
         for (const asset of assets) {
+          if (!asset || !asset._id) {
+            debugLogs.push(`[PLAYLIST_EXPAND] WARNING: Invalid asset object, skipping`);
+            continue;
+          }
+          
           const assetIdStr = asset._id.toString();
           
           if (!seenAssetIds.has(assetIdStr)) {
@@ -254,13 +281,13 @@ async function expandPlaylistAssets(playlist: any): Promise<{
             campaignAssets.push(asset);
             finalAssets.push({
               assetId: assetIdStr,
-              name: asset.name,
-              type: asset.type,
-              url: asset.url,
-              thumbnail: asset.thumbnail,
-              duration: asset.duration,
-              size: asset.size,
-              createdAt: asset.createdAt,
+              name: asset.name || 'Unnamed Asset',
+              type: asset.type || 'IMAGE',
+              url: asset.url || '',
+              thumbnail: asset.thumbnail || null,
+              duration: asset.duration || (asset.type === 'VIDEO' ? 0 : 10),
+              size: asset.size || null,
+              createdAt: asset.createdAt || new Date(),
             });
             debugLogs.push(`[PLAYLIST_EXPAND] Added asset: ${asset.name || assetIdStr} (${asset.type})`);
           } else {
@@ -278,37 +305,60 @@ async function expandPlaylistAssets(playlist: any): Promise<{
 
   // 2. Add direct assets (standalone assets not in any campaign)
   const directAssets: any[] = [];
-  if (playlist.assetIds && playlist.assetIds.length > 0) {
+  if (playlist.assetIds && Array.isArray(playlist.assetIds) && playlist.assetIds.length > 0) {
     debugLogs.push(`[PLAYLIST_EXPAND] Processing ${playlist.assetIds.length} direct assets...`);
     
-    const directAssetsData = await Asset.find({
-      _id: { $in: playlist.assetIds },
-    })
-      .select("_id name type url thumbnail duration size createdAt")
-      .sort({ createdAt: 1 })
-      .lean() as any[];
+    // Convert assetIds to ObjectIds for query
+    const assetObjectIds = playlist.assetIds
+      .map((aid: any) => {
+        if (aid && typeof aid === 'object' && aid._id) {
+          return new mongoose.Types.ObjectId(aid._id.toString());
+        } else if (aid && typeof aid.toString === 'function') {
+          return new mongoose.Types.ObjectId(aid.toString());
+        } else if (typeof aid === 'string' && mongoose.Types.ObjectId.isValid(aid)) {
+          return new mongoose.Types.ObjectId(aid);
+        }
+        return null;
+      })
+      .filter((id: any) => id !== null);
+    
+    if (assetObjectIds.length === 0) {
+      debugLogs.push(`[PLAYLIST_EXPAND] No valid direct asset IDs found`);
+    } else {
+      const directAssetsData = await Asset.find({
+        _id: { $in: assetObjectIds },
+      })
+        .select("_id name type url thumbnail duration size createdAt")
+        .sort({ createdAt: 1 })
+        .lean() as any[];
 
-    debugLogs.push(`[PLAYLIST_EXPAND] Found ${directAssetsData.length} direct assets in database`);
+      debugLogs.push(`[PLAYLIST_EXPAND] Found ${directAssetsData.length} direct assets in database`);
 
-    for (const asset of directAssetsData) {
-      const assetIdStr = asset._id.toString();
-      
-      if (!seenAssetIds.has(assetIdStr)) {
-        seenAssetIds.add(assetIdStr);
-        directAssets.push(asset);
-        finalAssets.push({
-          assetId: assetIdStr,
-          name: asset.name,
-          type: asset.type,
-          url: asset.url,
-          thumbnail: asset.thumbnail,
-          duration: asset.duration,
-          size: asset.size,
-          createdAt: asset.createdAt,
-        });
-        debugLogs.push(`[PLAYLIST_EXPAND] Added direct asset: ${asset.name || assetIdStr} (${asset.type})`);
-      } else {
-        debugLogs.push(`[PLAYLIST_EXPAND] Skipped duplicate direct asset: ${asset.name || assetIdStr}`);
+      for (const asset of directAssetsData) {
+        if (!asset || !asset._id) {
+          debugLogs.push(`[PLAYLIST_EXPAND] WARNING: Invalid direct asset object, skipping`);
+          continue;
+        }
+        
+        const assetIdStr = asset._id.toString();
+        
+        if (!seenAssetIds.has(assetIdStr)) {
+          seenAssetIds.add(assetIdStr);
+          directAssets.push(asset);
+          finalAssets.push({
+            assetId: assetIdStr,
+            name: asset.name || 'Unnamed Asset',
+            type: asset.type || 'IMAGE',
+            url: asset.url || '',
+            thumbnail: asset.thumbnail || null,
+            duration: asset.duration || (asset.type === 'VIDEO' ? 0 : 10),
+            size: asset.size || null,
+            createdAt: asset.createdAt || new Date(),
+          });
+          debugLogs.push(`[PLAYLIST_EXPAND] Added direct asset: ${asset.name || assetIdStr} (${asset.type})`);
+        } else {
+          debugLogs.push(`[PLAYLIST_EXPAND] Skipped duplicate direct asset: ${asset.name || assetIdStr}`);
+        }
       }
     }
   } else {
@@ -401,57 +451,23 @@ router.get("/:id", async (req: Request, res: Response) => {
     console.log(`[PLAYLIST_FETCH] Campaigns: ${playlist.campaignIds?.length || 0}, Direct assets: ${playlist.assetIds?.length || 0}`);
 
     // Expand campaigns and collect all assets
-    const { finalAssets, campaignAssets, directAssets, debugLogs } = await expandPlaylistAssets(playlist);
+    const { finalAssets, debugLogs } = await expandPlaylistAssets(playlist);
 
     // Log all debug information
     debugLogs.forEach(log => console.log(log));
 
-    // Get all assets for the campaigns in this playlist (for grouping by campaign)
-    const campaignIds = (playlist.campaignIds || []).map((c: any) => c._id?.toString() || c.toString());
-    const allCampaignAssets = await Asset.find({ campaignId: { $in: campaignIds } })
-      .sort({ campaignId: 1, createdAt: 1 })
-      .lean();
-
-    // Group assets by campaign for the campaigns array
-    const assetsByCampaign = new Map<string, any[]>();
-    allCampaignAssets.forEach(asset => {
-      const campaignIdStr = (asset.campaignId as mongoose.Types.ObjectId).toString();
-      if (!assetsByCampaign.has(campaignIdStr)) {
-        assetsByCampaign.set(campaignIdStr, []);
-      }
-      assetsByCampaign.get(campaignIdStr)!.push(asset);
-    });
-
-    // Enhance campaigns with their assets
-    const campaignsWithAssets = (playlist.campaignIds || []).map((campaign: any) => ({
-      ...campaign,
-      assets: assetsByCampaign.get(campaign._id?.toString() || campaign.toString()) || [],
-      assetCount: (assetsByCampaign.get(campaign._id?.toString() || campaign.toString()) || []).length,
-    }));
-
-    const directAssetCount = directAssets.length;
-    const campaignAssetCount = campaignAssets.length;
-
     console.log(`[PLAYLIST_FETCH] Returning playlist with ${finalAssets.length} final assets`);
+    
+    // Validate that we have assets when campaigns exist
+    if (playlist.campaignIds && playlist.campaignIds.length > 0 && finalAssets.length === 0) {
+      console.warn(`[PLAYLIST_FETCH] WARNING: Playlist has ${playlist.campaignIds.length} campaigns but no assets found!`);
+    }
 
+    // Return the simplified format as requested: { playlistId, name, assets: finalAssets }
     return res.status(200).json({
-      success: true,
-      data: {
-        ...playlist,
-        playlistId: playlist._id.toString(),
-        campaigns: campaignsWithAssets,
-        assets: allCampaignAssets, // All campaign assets (grouped)
-        directAssets: directAssets, // Direct assets
-        finalAssets: finalAssets, // Flattened array of ALL assets (campaigns + direct, no duplicates)
-        campaignCount: campaignsWithAssets.length,
-        directAssetCount,
-        campaignAssetCount,
-        maxCampaigns: MAX_CAMPAIGNS_PER_PLAYLIST,
-        totalAssetCount: campaignAssetCount + directAssetCount,
-        finalAssetCount: finalAssets.length,
-        canAddMoreCampaigns: campaignsWithAssets.length < MAX_CAMPAIGNS_PER_PLAYLIST,
-        debugLogs: process.env.NODE_ENV === "development" ? debugLogs : undefined,
-      },
+      playlistId: playlist._id.toString(),
+      name: playlist.name || 'Unnamed Playlist',
+      assets: finalAssets, // Final merged asset list (campaigns + direct, no duplicates)
     });
   } catch (error: any) {
     console.error("[PLAYLIST_FETCH] Error fetching playlist:", error);
